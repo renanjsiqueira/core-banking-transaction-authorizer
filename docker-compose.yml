@@ -3,15 +3,15 @@ services:
     image: postgres:16-alpine
     container_name: authorizer-postgres
     environment:
-      - POSTGRES_DB=authorizer
-      - POSTGRES_USER=authorizer
-      - POSTGRES_PASSWORD=authorizer
+      - POSTGRES_DB=transaction_authorization
+      - POSTGRES_USER=app
+      - POSTGRES_PASSWORD=app
     ports:
       - "127.0.0.1:5432:5432"
     volumes:
       - postgres-data:/var/lib/postgresql/data
     healthcheck:
-      test: [ "CMD-SHELL", "pg_isready -U authorizer -d authorizer" ]
+      test: [ "CMD-SHELL", "pg_isready -U app -d transaction_authorization" ]
       interval: 5s
       timeout: 3s
       retries: 5

@@ -1,0 +1,35 @@
+# Local development profile: targets the docker-compose stack
+# (PostgreSQL + LocalStack/SQS). Activate with: --spring.profiles.active=local
+spring:
+  datasource:
+    url: jdbc:postgresql://localhost:5432/transaction_authorization
+    username: app
+    password: app
+
+  flyway:
+    enabled: true
+
+app:
+  aws:
+    sqs:
+      region: sa-east-1
+      endpoint: http://localhost:4566
+      queue-url: http://localhost:4566/000000000000/conta-bancaria-criada
+      access-key: test
+      secret-key: test
+      max-messages: 10
+      wait-time-seconds: 20
+
+# Expose more detail locally for convenience.
+management:
+  endpoint:
+    health:
+      show-details: always
+
+springdoc:
+  swagger-ui:
+    enabled: true
+
+logging:
+  level:
+    br.com.renan.transactionauthorization: DEBUG

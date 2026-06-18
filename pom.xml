@@ -11,11 +11,11 @@
         <relativePath/>
     </parent>
 
-    <groupId>com.itau</groupId>
-    <artifactId>transaction-authorizer</artifactId>
+    <groupId>br.com.renan</groupId>
+    <artifactId>transaction-authorization</artifactId>
     <version>0.1.0</version>
-    <name>transaction-authorizer</name>
-    <description>Core banking transaction authorizer API (Itau technical challenge)</description>
+    <name>transaction-authorization</name>
+    <description>Core banking transaction authorization API (Itau technical challenge)</description>
 
     <properties>
         <java.version>21</java.version>
@@ -137,7 +137,7 @@
     </dependencies>
 
     <build>
-        <finalName>transaction-authorizer</finalName>
+        <finalName>transaction-authorization</finalName>
         <plugins>
             <plugin>
                 <groupId>org.springframework.boot</groupId>

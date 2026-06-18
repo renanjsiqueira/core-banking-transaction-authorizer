@@ -23,7 +23,13 @@ target/
 
 # Env
 .env
+.env.*
+
+# Local data / volumes
+/data/
+/.localstack/
+*.db
 
 # Challenge artifacts (must NOT be committed per challenge instructions)
-Desafio*.pdf
+*.pdf
 docker-compose 3.yml
