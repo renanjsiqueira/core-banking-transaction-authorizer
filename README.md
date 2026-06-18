@@ -153,6 +153,29 @@ Com a aplicação no ar (`http://localhost:8080`):
 
 ---
 
+## Modelo de dados
+
+Duas tabelas, criadas via Flyway (`V1` e `V2`):
+
+- **`accounts`** — armazena o **saldo atual** (`balance_amount`) e o **status** da
+  conta (`ENABLED`/`DISABLED`/`BLOCKED`), além de owner, moeda e timestamps de
+  origem/importação. Cada conta é importada com saldo **zero** e moeda **BRL**.
+- **`transactions`** — armazena **cada tentativa de autorização** (o "ledger"):
+  tipo (`CREDIT`/`DEBIT`), valor, moeda, status (`SUCCEEDED`/`FAILED`) e, quando
+  recusada, o `failure_reason`.
+
+Decisões relevantes:
+
+- O **`transaction id`** é a chave primária da transação e, em fase posterior,
+  será usado como **chave de idempotência** do endpoint de autorização.
+- Valores monetários usam **`BigDecimal` / `NUMERIC(19,2)`** — aritmética decimal
+  exata; `double` nunca é usado para dinheiro.
+- A coluna **`version`** da conta existe para **controle de concorrência via
+  optimistic locking** em caminhos não-críticos; a autorização crítica (débito)
+  usará **lock pessimista** numa fase posterior.
+- A transação referencia a conta apenas por `account_id` (sem `@ManyToOne`),
+  mantendo o caminho de escrita simples e performático.
+
 ## Roadmap (próximas fases)
 
 2. Domínio: enums, entidades JPA, mapeamentos
