@@ -1,0 +1,29 @@
+# Maven
+target/
+!.mvn/wrapper/maven-wrapper.jar
+.mvn/timing.properties
+
+# IDE
+.idea/
+*.iml
+*.ipr
+*.iws
+.vscode/
+.settings/
+.project
+.classpath
+.flattened-pom.xml
+
+# OS
+.DS_Store
+
+# Logs / runtime
+*.log
+/logs/
+
+# Env
+.env
+
+# Challenge artifacts (must NOT be committed per challenge instructions)
+Desafio*.pdf
+docker-compose 3.yml
