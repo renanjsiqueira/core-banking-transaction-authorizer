@@ -176,6 +176,14 @@ Decisões relevantes:
 - A transação referencia a conta apenas por `account_id` (sem `@ManyToOne`),
   mantendo o caminho de escrita simples e performático.
 
+### Persistência
+
+A aplicação usa PostgreSQL como banco relacional ACID. A tabela `accounts` mantém o saldo atual da conta e a tabela `transactions` registra cada tentativa de autorização. A busca da conta para autorização usa lock pessimista, garantindo consistência em cenários concorrentes.
+
+> **Testes de integração:** usam **PostgreSQL real via Testcontainers** (nunca H2),
+> portanto exigem **Docker em execução**. Rode com `mvn test`. Sem Docker, apenas
+> os testes unitários executam; os de integração falham ao não encontrar o daemon.
+
 ## Roadmap (próximas fases)
 
 2. Domínio: enums, entidades JPA, mapeamentos
