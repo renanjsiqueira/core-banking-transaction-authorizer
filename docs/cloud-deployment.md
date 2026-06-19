@@ -15,10 +15,11 @@ Topologia de referência para rodar os dois serviços em cloud pública AWS.
         ┌──────────────────────────────────────┐
         │  EKS / ECS Fargate (subnets privadas) │
         │                                       │
-        │  transaction-authorization-api        │  HPA por RPS/latência
+        │  core-banking-transaction-             │  HPA por RPS/latência
+        │  authorizer-api                        │
         │   (Deployment, N réplicas)            │
         │                                       │
-        │  account-onboarding-listener          │  escala por profundidade da fila
+        │  core-banking-account-created-listener │  escala por profundidade da fila
         │   (Deployment, M réplicas)            │
         └───────┬───────────────────┬───────────┘
                 │                   │
@@ -29,10 +30,26 @@ Topologia de referência para rodar os dois serviços em cloud pública AWS.
         └────────────────┘
 ```
 
+## Diagrama (Mermaid)
+
+```mermaid
+flowchart LR
+    Client[Clientes] --> APIGW[API Gateway]
+    APIGW --> ALB[Application Load Balancer]
+    ALB --> API[core-banking-transaction-authorizer-api Pods]
+
+    API --> Redis[(ElastiCache Redis)]
+    API --> Aurora[(Aurora PostgreSQL)]
+
+    SQS[SQS conta-bancaria-criada] --> Listener[core-banking-account-created-listener Pods]
+    Listener --> Aurora
+```
+
 ## Componentes
 
-- **Borda:** Route 53 + API Gateway (ou ALB) com WAF, terminação TLS e rate
-  limiting na frente **apenas da API**. O listener não é exposto à internet.
+- **Borda:** Route 53 + API Gateway (ou ALB) com WAF e terminação TLS. Throttling
+  técnico contra abuso pode existir na borda, mas não substitui a serialização
+  por conta no fluxo de autorização. O listener não é exposto à internet.
 - **Compute:** containers em **EKS** (ou **ECS Fargate**). Cada serviço é um
   Deployment/Service independente com seu próprio autoscaling:
   - API → Horizontal Pod Autoscaler por CPU + RPS/latência.
@@ -43,6 +60,10 @@ Topologia de referência para rodar os dois serviços em cloud pública AWS.
   groups/IAM.
 - **Mensageria:** **Amazon SQS** com **dead-letter queue** e redrive policy para
   poison messages; visibility timeout ajustado ao tempo de processamento.
+- **Coordenação/cache:** **Amazon ElastiCache for Redis** — camada auxiliar da
+  API para lock distribuído (`transactionId`/`accountId`). Não armazena saldo
+  nem é fonte da verdade (ver
+  [ADR 0007](adr/0007-redis-distributed-locks.md)).
 - **Segredos/config:** AWS Secrets Manager / SSM Parameter Store, injetados como
   variáveis de ambiente (12-factor). IAM roles for service accounts (IRSA) — sem
   chaves estáticas.

@@ -8,15 +8,16 @@ multi-módulo** com **dois serviços** e um kernel compartilhado.
 
 | Módulo | Tipo | Responsabilidade | Porta |
 |---|---|---|---|
-| `transaction-authorization-api` | síncrono | `POST /transactions/{transactionId}` — autorização CREDIT/DEBIT. **Owner do schema (Flyway).** | 8080 |
-| `account-onboarding-listener` | assíncrono | Consome a fila SQS `conta-bancaria-criada` e importa contas. **Flyway desabilitado.** | 8081 |
-| `shared-kernel` | biblioteca | Tipos comuns: enums, convenções de dinheiro. Sem regra de negócio pesada. | — |
+| `core-banking-transaction-authorizer-api` | síncrono | `POST /transactions/{transactionId}` — autorização CREDIT/DEBIT. **Owner do schema (Flyway).** | 8080 |
+| `core-banking-account-created-listener` | assíncrono | Consome a fila SQS `conta-bancaria-criada` e importa contas. **Flyway desabilitado.** | 8081 |
+| `core-banking-commons-domain` | biblioteca | Linguagem de domínio compartilhada: enums e convenções de dinheiro. Sem Spring/JPA. | — |
 
 Ambos compartilham **um único PostgreSQL** (mesmo bounded context). A decisão
 está documentada em [docs/adr/0001-two-services-architecture.md](docs/adr/0001-two-services-architecture.md).
 
 Documentação adicional: [arquitetura](docs/architecture.md) ·
-[deploy em cloud](docs/cloud-deployment.md) · [pipeline CI/CD](docs/pipeline.md).
+[deploy em cloud](docs/cloud-deployment.md) · [pipeline CI/CD](docs/pipeline.md) ·
+[backlog production readiness](docs/production-readiness-backlog.md).
 
 ## Estrutura
 
@@ -24,9 +25,10 @@ Documentação adicional: [arquitetura](docs/architecture.md) ·
 core-banking-transaction-authorizer/
 ├── pom.xml                       # parent/aggregator
 ├── docker-compose.yml
-├── shared-kernel/
-├── transaction-authorization-api/
-├── account-onboarding-listener/
+├── requests/                     # coleção HTTP para revisão manual
+├── core-banking-commons-domain/
+├── core-banking-transaction-authorizer-api/
+├── core-banking-account-created-listener/
 └── docs/  (architecture, cloud-deployment, pipeline, adr/)
 ```
 
@@ -48,13 +50,25 @@ mvn clean test
 > e exigem **Docker em execução**. Sem Docker, rode apenas os unitários:
 > `mvn clean test -Dtest='!*IntegrationTest' -Dsurefire.failIfNoSpecifiedTests=false`.
 
+### Estratégia de testes
+
+A solução possui testes unitários, testes de controller, testes de integração com PostgreSQL via Testcontainers e testes de concorrência para validar consistência de saldo em cenários simultâneos.
+
+Os principais cenários cobertos são autorização de crédito, autorização de débito, saldo insuficiente, idempotência por transactionId, conflito de idempotência, importação de contas via SQS, mensagens duplicadas e concorrência sobre a mesma conta.
+
+O uso de PostgreSQL real nos testes de integração evita diferenças de comportamento que poderiam ocorrer com bancos em memória.
+
+Os testes de concorrência usam `ExecutorService` + `CountDownLatch` (disparo simultâneo) e `assertTimeout`, sem `Thread.sleep` nem estado compartilhado entre testes. Incluem: 20 débitos simultâneos (10 `SUCCEEDED` / 10 `FAILED`, saldo final `0.00`, nunca negativo), 50 créditos simultâneos (saldo `50.00`) e 10 chamadas simultâneas com o mesmo `transactionId` (saldo aplicado uma única vez, `10.00`).
+
+O fluxo assíncrono do listener é coberto por testes unitários fortes do consumer (mockando `SqsClient`) e por um teste de integração com PostgreSQL que valida a persistência da conta. O fluxo ponta-a-ponta com SQS pode ser validado localmente via `docker compose up --build`.
+
 ---
 
 ## Subir tudo com Docker Compose
 
 O `docker-compose.yml` sobe: `postgres`, `localstack` (SQS), `message-generator`
-(cria a fila e publica **100.000** contas), `transaction-authorization-api` e
-`account-onboarding-listener`.
+(cria a fila e publica **100.000** contas), `core-banking-transaction-authorizer-api` e
+`core-banking-account-created-listener`.
 
 ```bash
 docker compose up --build
@@ -64,9 +78,38 @@ Aguarde `message-generator exited with code 0` (fila populada). A API roda as
 migrations no startup; o listener sobe depois da API (via `depends_on` healthy) e
 começa a drenar a fila.
 
-- API health: http://localhost:8080/actuator/health
-- Listener health: http://localhost:8081/actuator/health
-- Swagger (API): http://localhost:8080/swagger-ui.html
+Os dois serviços rodam dentro dos containers com o profile `local`, e os
+hostnames (`postgres`, `localstack`) são injetados por variáveis de ambiente
+padrão do Spring (`SPRING_DATASOURCE_URL`, `APP_AWS_SQS_*`).
+
+Verificar a **API** (porta 8080):
+
+```bash
+curl http://localhost:8080/actuator/health
+```
+
+Verificar o **Listener** (porta 8081):
+
+```bash
+curl http://localhost:8081/actuator/health
+```
+
+Verificar a **fila SQS**:
+
+```bash
+export AWS_DEFAULT_REGION=sa-east-1
+export AWS_ACCESS_KEY_ID=test
+export AWS_SECRET_ACCESS_KEY=test
+
+aws --endpoint-url=http://localhost:4566 \
+  sqs receive-message \
+  --queue-url http://localhost:4566/000000000000/conta-bancaria-criada \
+  --max-number-of-messages 10
+```
+
+Swagger (API): http://localhost:8080/swagger-ui.html
+
+Coleção de requisições: [requests/transaction-authorizer.http](requests/transaction-authorizer.http).
 
 > Derrubar e limpar o volume: `docker compose down -v`.
 
@@ -80,11 +123,11 @@ Suba só a infraestrutura e rode cada serviço com o profile `local`:
 docker compose up -d postgres localstack message-generator
 
 # Terminal 1 — API (porta 8080, roda Flyway)
-mvn -pl transaction-authorization-api -am spring-boot:run \
+mvn -pl core-banking-transaction-authorizer-api -am spring-boot:run \
   -Dspring-boot.run.profiles=local
 
 # Terminal 2 — Listener (porta 8081, consome SQS)
-mvn -pl account-onboarding-listener -am spring-boot:run \
+mvn -pl core-banking-account-created-listener -am spring-boot:run \
   -Dspring-boot.run.profiles=local
 ```
 
@@ -163,6 +206,26 @@ operações concorrentes na mesma conta. O `transactionId` é a **chave de
 idempotência**: replay com mesmo payload retorna o resultado anterior (sem
 reaplicar saldo); com payload diferente retorna `409 CONFLICT`.
 
+### Módulo de domínio compartilhado
+
+O módulo `core-banking-commons-domain` concentra apenas vocabulário de domínio estável
+e livre de framework: status de conta/transação, tipos de transação, motivos de
+falha e convenções de dinheiro. Ele não contém entidades JPA, DTOs REST/SQS,
+repositories, configurações Spring ou regras de caso de uso, evitando que vire
+um `commons` genérico e acople os serviços por implementação.
+
+### Redis: distributed locks
+
+Redis é utilizado como camada auxiliar para coordenação distribuída entre múltiplas instâncias da aplicação.
+
+A API utiliza locks temporários por `transactionId` e por `accountId` para reduzir processamento simultâneo duplicado e contenção no banco. Quando uma requisição encontra o lock ocupado, ela aguarda e tenta novamente internamente até `app.redis-lock.wait-timeout`, com intervalo `app.redis-lock.retry-delay`.
+
+A consistência final do saldo continua sendo responsabilidade do PostgreSQL, por meio de transação ACID, chave única em `transactions.id` e lock pessimista na conta. Redis não armazena saldo e não é fonte da verdade.
+
+Se o lock não for adquirido dentro do timeout configurado, a requisição é recusada sem persistir a transação. O cliente pode repetir o mesmo `transactionId`; a idempotência garante que uma transação já processada não seja aplicada duas vezes.
+
+Os locks são adquiridos sempre na ordem `transactionId` → `accountId` (nunca invertida, para evitar deadlock lógico), com unlock seguro por *owner* (Lua script). No `core-banking-account-created-listener` o Redis não é usado: a idempotência da importação já é garantida pela primary key `accounts.id` (Redis é mais crítico na API de autorização). Detalhes e trade-offs em [docs/adr/0007-redis-distributed-locks.md](docs/adr/0007-redis-distributed-locks.md).
+
 ## Importação de contas via SQS
 
 O listener consome `conta-bancaria-criada` com long polling. Contas são
@@ -172,7 +235,7 @@ duplica) e a mensagem só é **deletada após sucesso** (entrega at-least-once).
 ## Persistência e migrations
 
 O PostgreSQL é o banco relacional ACID compartilhado. As **migrations Flyway
-ficam apenas na `transaction-authorization-api`** (owner do schema); o listener
+ficam apenas na `core-banking-transaction-authorizer-api`** (owner do schema); o listener
 usa `spring.flyway.enabled=false` e apenas valida o mapeamento. Em produção, as
 migrations seriam executadas por um **job/step de pipeline antes do deploy** dos
 serviços (ver [docs/pipeline.md](docs/pipeline.md)).
@@ -183,3 +246,24 @@ Ambos expõem Actuator (`/actuator/health`, `/actuator/prometheus`) e métricas
 Micrometer. O listener publica `accounts.imported.total`,
 `accounts.duplicates.total`, `sqs.account-created.messages.processed.total`,
 `sqs.account-created.messages.failed.total`.
+
+## Resiliência: implementado e backlog
+
+Implementado neste case:
+
+- Idempotência por `transactionId`, com replay seguro e conflito para payload divergente.
+- Lock pessimista no PostgreSQL como garantia final de consistência.
+- Lock distribuído Redis por `transactionId` e `accountId`, com espera interna configurável.
+- Processamento SQS at-least-once: mensagem só é deletada após sucesso e importação é idempotente por `accountId`.
+- Health checks, shutdown graceful, Actuator/Prometheus, Dockerfiles e `docker-compose` completo para execução local.
+
+Assumidamente deixado como evolução por risco/tempo:
+
+- Backoff exponencial com full jitter no lock Redis.
+- Circuit breaker/fallback explícito para indisponibilidade do Redis.
+- DLQ local no LocalStack; em cloud a proposta já prevê SQS com DLQ e redrive policy.
+- Métricas customizadas da API por decisão de autorização, contenção de lock e timeout.
+- Correlation ID/MDC e tracing distribuído com OpenTelemetry.
+- Teste de carga automatizado (`k6` ou Gatling) e guia formal de capacidade.
+
+Esses itens estão priorizados em [docs/production-readiness-backlog.md](docs/production-readiness-backlog.md).

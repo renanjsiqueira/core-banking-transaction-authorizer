@@ -22,13 +22,14 @@ diferentes de escala, falha e operação.
 
 Dividir a aplicação em um monorepo Maven multi-módulo com três módulos:
 
-- **`shared-kernel`** — apenas tipos compartilhados (enums, convenções de
-  dinheiro). Sem regra de negócio pesada, sem Spring, sem persistência. Mantém os
-  dois serviços consistentes sem acoplá-los por comportamento.
-- **`transaction-authorization-api`** — a API síncrona. Dona do schema do banco
+- **`core-banking-commons-domain`** — apenas linguagem de domínio compartilhada
+  (enums, motivos de falha e convenções de dinheiro). Sem regra de negócio
+  pesada, sem Spring, sem persistência. Mantém os dois serviços consistentes sem
+  acoplá-los por comportamento.
+- **`core-banking-transaction-authorizer-api`** — a API síncrona. Dona do schema do banco
   (Flyway) e das regras de negócio de autorização.
-- **`account-onboarding-listener`** — o consumidor SQS assíncrono. Importa
-  contas; Flyway desabilitado.
+- **`core-banking-account-created-listener`** — o consumidor SQS assíncrono.
+  Importa eventos de conta criada; Flyway desabilitado.
 
 Ambos compartilham um **único banco PostgreSQL** neste desafio.
 
@@ -36,8 +37,8 @@ Ambos compartilham um **único banco PostgreSQL** neste desafio.
 
 - **Escalabilidade independente:** escalar a API horizontalmente para picos de
   requisição sem escalar o consumidor da fila, e vice-versa.
-- **Isolamento operacional:** um backlog/incidente no onboarding não degrada o
-  caminho crítico de autorização; deploys são independentes.
+- **Isolamento operacional:** um backlog/incidente na ingestão de contas criadas
+  não degrada o caminho crítico de autorização; deploys são independentes.
 - **Propriedade clara dos modos de falha:** a API ajusta preocupações
   web/HTTP; o listener ajusta polling, backoff e entrega at-least-once.
 - **Mesmo bounded context:** ambos pertencem a "contas & autorização", então um
@@ -50,9 +51,23 @@ Ambos compartilham um **único banco PostgreSQL** neste desafio.
   schema (a API) e migrations aditivas e retrocompatíveis.
 - **Build de monorepo:** o reactor builda todos os módulos juntos; as imagens
   Docker por serviço usam `-pl <módulo> -am` para buildar só o necessário.
-- **Alguma duplicação:** cada serviço mapeia seu próprio `AccountEntity`. É
+- **Alguma duplicação:** cada serviço mapeia seu próprio `Account`. É
   intencional — mantém os modelos de persistência independentes e evita colocar
-  entidades JPA no shared-kernel.
+  entidades JPA no `core-banking-commons-domain`.
+
+## Fronteira do módulo compartilhado
+
+O nome `core-banking-commons-domain` foi escolhido para explicitar que o módulo é um
+shared kernel de domínio, não uma biblioteca `commons` genérica. Entram nele
+apenas tipos estáveis e sem dependências de framework:
+
+- enums de domínio (`AccountStatus`, `TransactionType`, `TransactionStatus`);
+- motivos padronizados de falha (`FailureReason`);
+- convenções simples de dinheiro (`MoneyConstants`).
+
+Ficam fora dele entidades JPA, DTOs REST/SQS, repositories, configurações Spring,
+clientes externos e regras de caso de uso. Essa separação evita acoplamento
+acidental entre a API síncrona e o listener.
 
 ## Por que o banco compartilhado foi aceito aqui
 
