@@ -184,6 +184,35 @@ A aplicação usa PostgreSQL como banco relacional ACID. A tabela `accounts` man
 > portanto exigem **Docker em execução**. Rode com `mvn test`. Sem Docker, apenas
 > os testes unitários executam; os de integração falham ao não encontrar o daemon.
 
+### Importação de contas via SQS
+
+A aplicação consome mensagens da fila `conta-bancaria-criada` criada no LocalStack. Cada mensagem representa uma conta aberta por um sistema externo. As contas são importadas com saldo inicial zero e moeda BRL. O processamento é idempotente: mensagens duplicadas não criam contas duplicadas.
+
+O consumidor (`AccountCreatedSqsConsumer`) roda apenas quando
+`app.aws.sqs.polling-enabled=true` (ativado no profile `local`), via `@Scheduled`
+com long polling. Uma mensagem só é **deletada após sucesso**; em erro
+inesperado ela permanece na fila para reprocessamento (at-least-once), o que é
+seguro porque a importação é idempotente.
+
+Inspecionar a fila via AWS CLI:
+
+```bash
+export AWS_DEFAULT_REGION=sa-east-1
+export AWS_ACCESS_KEY_ID=test
+export AWS_SECRET_ACCESS_KEY=test
+
+aws --endpoint-url=http://localhost:4566 \
+  --region sa-east-1 \
+  sqs receive-message \
+  --queue-url http://localhost:4566/000000000000/conta-bancaria-criada \
+  --max-number-of-messages 10
+```
+
+Métricas Micrometer expostas (refinadas na fase de observabilidade):
+`accounts.imported.total`, `accounts.duplicates.total`,
+`sqs.account-created.messages.processed.total`,
+`sqs.account-created.messages.failed.total`.
+
 ## Roadmap (próximas fases)
 
 2. Domínio: enums, entidades JPA, mapeamentos

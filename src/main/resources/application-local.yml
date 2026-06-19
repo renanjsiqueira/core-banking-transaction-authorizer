@@ -17,8 +17,10 @@ app:
       queue-url: http://localhost:4566/000000000000/conta-bancaria-criada
       access-key: test
       secret-key: test
-      max-messages: 10
-      wait-time-seconds: 20
+      max-number-of-messages: 10
+      wait-time-seconds: 10
+      polling-enabled: true
+      poll-delay-millis: 1000
 
 # Expose more detail locally for convenience.
 management:

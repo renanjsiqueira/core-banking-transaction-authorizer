@@ -36,8 +36,10 @@ app:
       queue-url: ${AWS_SQS_QUEUE_URL:}
       access-key: ${AWS_ACCESS_KEY_ID:}
       secret-key: ${AWS_SECRET_ACCESS_KEY:}
-      max-messages: 10
-      wait-time-seconds: 20
+      max-number-of-messages: 10
+      wait-time-seconds: 10
+      polling-enabled: ${SQS_POLLING_ENABLED:false}
+      poll-delay-millis: ${SQS_POLL_DELAY_MILLIS:1000}
 
 # --- Observability ---
 management:

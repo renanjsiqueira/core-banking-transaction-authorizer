@@ -24,8 +24,11 @@ app:
       queue-url: http://localhost:4566/000000000000/conta-bancaria-criada
       access-key: test
       secret-key: test
-      max-messages: 10
-      wait-time-seconds: 20
+      max-number-of-messages: 10
+      wait-time-seconds: 10
+      # Keep the scheduled poller OFF during tests (no LocalStack in CI).
+      polling-enabled: false
+      poll-delay-millis: 1000
 
 logging:
   level:
