@@ -43,11 +43,15 @@ core-banking-transaction-authorizer/
 ## Build e testes
 
 ```bash
-mvn clean test
+./scripts/build-all.sh
 ```
 
-> Os testes de integração usam **PostgreSQL real via Testcontainers** (nunca H2)
-> e exigem **Docker em execução**. Sem Docker, rode apenas os unitários:
+O script executa `mvn clean verify`, compilando todos os módulos, rodando os
+testes e gerando os artefatos.
+
+> Os testes de integração usam **PostgreSQL real via Testcontainers** (nunca H2).
+> Sem Docker/Testcontainers funcional, eles são ignorados de forma segura. Para
+> rodar apenas os unitários:
 > `mvn clean test -Dtest='!*IntegrationTest' -Dsurefire.failIfNoSpecifiedTests=false`.
 
 ### Estratégia de testes
@@ -71,8 +75,12 @@ O `docker-compose.yml` sobe: `postgres`, `localstack` (SQS), `message-generator`
 `core-banking-account-created-listener`.
 
 ```bash
-docker compose up --build
+./scripts/start-local.sh
 ```
+
+Antes do `up`, o script verifica as imagens Docker necessárias e baixa apenas as
+que ainda não existem localmente, com retry sequencial. Para pular essa checagem:
+`./scripts/start-local.sh --skip-image-check`.
 
 Aguarde `message-generator exited with code 0` (fila populada). A API roda as
 migrations no startup; o listener sobe depois da API (via `depends_on` healthy) e
@@ -111,7 +119,14 @@ Swagger (API): http://localhost:8080/swagger-ui.html
 
 Coleção de requisições: [requests/transaction-authorizer.http](requests/transaction-authorizer.http).
 
-> Derrubar e limpar o volume: `docker compose down -v`.
+Para subir em background:
+
+```bash
+./scripts/start-local.sh --detached
+```
+
+> Derrubar e limpar o volume: `docker compose down -v` ou subir limpando tudo com
+> `./scripts/start-local.sh --clean`.
 
 ---
 
@@ -120,7 +135,7 @@ Coleção de requisições: [requests/transaction-authorizer.http](requests/tran
 Suba só a infraestrutura e rode cada serviço com o profile `local`:
 
 ```bash
-docker compose up -d postgres localstack message-generator
+./scripts/start-local.sh --infra-only --detached
 
 # Terminal 1 — API (porta 8080, roda Flyway)
 mvn -pl core-banking-transaction-authorizer-api -am spring-boot:run \

@@ -21,4 +21,4 @@ RUN apt-get update && apt-get install -y --no-install-recommends curl \
     && rm -rf /var/lib/apt/lists/*
 COPY --from=build /workspace/core-banking-account-created-listener/target/core-banking-account-created-listener.jar app.jar
 EXPOSE 8081
-ENTRYPOINT ["java", "-jar", "/app.jar"]
+ENTRYPOINT ["java", "-jar", "app.jar"]
