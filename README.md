@@ -259,6 +259,19 @@ A aplicação expõe o endpoint `POST /transactions/{transactionId}` para proces
 | Conflito de idempotência | `409 Conflict` |
 | Erro inesperado | `500 Internal Server Error` |
 
+### Consistência transacional e idempotência
+
+A autorização de transações é executada dentro de uma transação ACID no PostgreSQL. Para evitar race conditions em operações concorrentes sobre a mesma conta, a aplicação busca a conta com lock pessimista (`PESSIMISTIC_WRITE`) antes de alterar o saldo.
+
+O `transactionId` recebido na URL é usado como chave de idempotência. Caso a mesma transação seja enviada novamente com o mesmo payload, a aplicação retorna o resultado previamente processado sem aplicar o saldo novamente. Caso o mesmo `transactionId` seja reutilizado com payload diferente, a API retorna `409 CONFLICT`.
+
+Resumo das regras de negócio:
+
+- Conta inexistente → `404`; conta não-`ENABLED` → transação `FAILED` (`ACCOUNT_DISABLED`), saldo intacto.
+- `CREDIT` soma; `DEBIT` subtrai. `DEBIT` que resultaria em saldo negativo → `FAILED` (`INSUFFICIENT_FUNDS`), saldo intacto.
+- Resultados de negócio (`SUCCEEDED`/`FAILED`) retornam `200 OK`; o status fica no corpo.
+- Saldo sempre em `BigDecimal` (escala 2); moeda suportada: `BRL`.
+
 ## Roadmap (próximas fases)
 
 2. Domínio: enums, entidades JPA, mapeamentos

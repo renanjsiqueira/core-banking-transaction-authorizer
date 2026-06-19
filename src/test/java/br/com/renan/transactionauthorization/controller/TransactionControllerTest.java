@@ -15,21 +15,22 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
-import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 
+import br.com.renan.transactionauthorization.dto.AccountDataResponse;
+import br.com.renan.transactionauthorization.dto.AmountResponse;
+import br.com.renan.transactionauthorization.dto.BalanceResponse;
+import br.com.renan.transactionauthorization.dto.TransactionDataResponse;
 import br.com.renan.transactionauthorization.dto.TransactionRequest;
+import br.com.renan.transactionauthorization.dto.TransactionResponse;
 import br.com.renan.transactionauthorization.enums.TransactionStatus;
 import br.com.renan.transactionauthorization.enums.TransactionType;
 import br.com.renan.transactionauthorization.exception.AccountNotFoundException;
 import br.com.renan.transactionauthorization.exception.TransactionConflictException;
-import br.com.renan.transactionauthorization.mapper.TransactionResponseMapper;
-import br.com.renan.transactionauthorization.service.AuthorizationResult;
 import br.com.renan.transactionauthorization.service.TransactionAuthorizationService;
 
 @WebMvcTest(TransactionController.class)
-@Import(TransactionResponseMapper.class)
 class TransactionControllerTest {
 
     private static final String TX_ID = "8e8ae808-b154-48b5-9f3e-553935cc4543";
@@ -47,17 +48,21 @@ class TransactionControllerTest {
                 """.formatted(ACCOUNT_ID);
     }
 
-    private AuthorizationResult sampleResult() {
-        return new AuthorizationResult(
-                UUID.fromString(TX_ID), TransactionType.CREDIT, new BigDecimal("97.07"), "BRL",
-                TransactionStatus.SUCCEEDED, OffsetDateTime.now(),
-                UUID.fromString(ACCOUNT_ID), new BigDecimal("183.12"), "BRL");
+    private TransactionResponse sampleResponse() {
+        return new TransactionResponse(
+                new TransactionDataResponse(
+                        UUID.fromString(TX_ID), TransactionType.CREDIT,
+                        new AmountResponse(new BigDecimal("97.07"), "BRL"),
+                        TransactionStatus.SUCCEEDED, OffsetDateTime.now()),
+                new AccountDataResponse(
+                        UUID.fromString(ACCOUNT_ID),
+                        new BalanceResponse(new BigDecimal("183.12"), "BRL")));
     }
 
     @Test
     void validRequest_returns200WithContract() throws Exception {
         when(authorizationService.authorize(eq(UUID.fromString(TX_ID)), any(TransactionRequest.class)))
-                .thenReturn(sampleResult());
+                .thenReturn(sampleResponse());
 
         mockMvc.perform(post("/transactions/{transactionId}", TX_ID)
                         .contentType(MediaType.APPLICATION_JSON)

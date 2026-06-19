@@ -7,24 +7,25 @@ import br.com.renan.transactionauthorization.dto.AmountResponse;
 import br.com.renan.transactionauthorization.dto.BalanceResponse;
 import br.com.renan.transactionauthorization.dto.TransactionDataResponse;
 import br.com.renan.transactionauthorization.dto.TransactionResponse;
-import br.com.renan.transactionauthorization.service.AuthorizationResult;
+import br.com.renan.transactionauthorization.entity.AccountEntity;
+import br.com.renan.transactionauthorization.entity.TransactionEntity;
 
-/** Builds the challenge-shaped {@link TransactionResponse} from an {@link AuthorizationResult}. */
+/** Builds the challenge-shaped {@link TransactionResponse} from persisted state. */
 @Component
 public class TransactionResponseMapper {
 
-    public TransactionResponse toResponse(AuthorizationResult result) {
-        TransactionDataResponse transaction = new TransactionDataResponse(
-                result.transactionId(),
-                result.type(),
-                new AmountResponse(result.amount(), result.currency()),
-                result.status(),
-                result.timestamp());
+    public TransactionResponse toResponse(TransactionEntity transaction, AccountEntity account) {
+        TransactionDataResponse transactionData = new TransactionDataResponse(
+                transaction.getId(),
+                transaction.getType(),
+                new AmountResponse(transaction.getAmount(), transaction.getCurrency()),
+                transaction.getStatus(),
+                transaction.getCreatedAt());
 
-        AccountDataResponse account = new AccountDataResponse(
-                result.accountId(),
-                new BalanceResponse(result.balanceAmount(), result.balanceCurrency()));
+        AccountDataResponse accountData = new AccountDataResponse(
+                account.getId(),
+                new BalanceResponse(account.getBalanceAmount(), account.getCurrency()));
 
-        return new TransactionResponse(transaction, account);
+        return new TransactionResponse(transactionData, accountData);
     }
 }

@@ -11,8 +11,6 @@ import org.springframework.web.bind.annotation.RestController;
 
 import br.com.renan.transactionauthorization.dto.TransactionRequest;
 import br.com.renan.transactionauthorization.dto.TransactionResponse;
-import br.com.renan.transactionauthorization.mapper.TransactionResponseMapper;
-import br.com.renan.transactionauthorization.service.AuthorizationResult;
 import br.com.renan.transactionauthorization.service.TransactionAuthorizationService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -20,6 +18,11 @@ import jakarta.validation.Valid;
 
 /**
  * REST endpoint for transaction authorization.
+ *
+ * <p>Business outcomes (SUCCEEDED, or FAILED due to insufficient funds / disabled
+ * account) return {@code 200 OK} with the outcome in the body. Errors are mapped
+ * by {@code ApiExceptionHandler}: 400 (validation), 404 (account not found),
+ * 409 (idempotency conflict), 500 (unexpected).
  */
 @RestController
 @RequestMapping("/transactions")
@@ -27,23 +30,20 @@ import jakarta.validation.Valid;
 public class TransactionController {
 
     private final TransactionAuthorizationService authorizationService;
-    private final TransactionResponseMapper responseMapper;
 
-    public TransactionController(TransactionAuthorizationService authorizationService,
-                                 TransactionResponseMapper responseMapper) {
+    public TransactionController(TransactionAuthorizationService authorizationService) {
         this.authorizationService = authorizationService;
-        this.responseMapper = responseMapper;
     }
 
     @PostMapping("/{transactionId}")
     @Operation(summary = "Authorize a transaction",
             description = "Processes a CREDIT or DEBIT authorization for the given account "
-                    + "and returns the transaction outcome and the resulting account balance.")
+                    + "and returns the transaction outcome and the resulting account balance. "
+                    + "Idempotent by transactionId.")
     public ResponseEntity<TransactionResponse> authorize(
             @PathVariable UUID transactionId,
             @Valid @RequestBody TransactionRequest request) {
 
-        AuthorizationResult result = authorizationService.authorize(transactionId, request);
-        return ResponseEntity.ok(responseMapper.toResponse(result));
+        return ResponseEntity.ok(authorizationService.authorize(transactionId, request));
     }
 }

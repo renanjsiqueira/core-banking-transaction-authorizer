@@ -3,15 +3,13 @@ package br.com.renan.transactionauthorization.service;
 import java.util.UUID;
 
 import br.com.renan.transactionauthorization.dto.TransactionRequest;
+import br.com.renan.transactionauthorization.dto.TransactionResponse;
 
 /**
- * Authorizes a CREDIT/DEBIT transaction against an account.
- *
- * <p>The real balance rules (atomic debit, non-negative balance), pessimistic
- * locking and {@code transactionId} idempotency are implemented in the next
- * phase. This phase wires the contract end-to-end.
+ * Authorizes a CREDIT/DEBIT transaction against an account, enforcing balance
+ * rules, transactional consistency and idempotency by {@code transactionId}.
  */
 public interface TransactionAuthorizationService {
 
-    AuthorizationResult authorize(UUID transactionId, TransactionRequest request);
+    TransactionResponse authorize(UUID transactionId, TransactionRequest request);
 }

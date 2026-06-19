@@ -1,6 +1,13 @@
 # Integration-test profile. The datasource URL/username/password are injected
 # at runtime by @DynamicPropertySource from the Testcontainers PostgreSQL.
 spring:
+  datasource:
+    hikari:
+      # Headroom for concurrency tests (each thread holds a connection while
+      # waiting on the pessimistic row lock).
+      maximum-pool-size: 30
+      connection-timeout: 20000
+
   jpa:
     open-in-view: false
     hibernate:
