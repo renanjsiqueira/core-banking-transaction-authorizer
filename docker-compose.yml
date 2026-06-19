@@ -1,7 +1,7 @@
 services:
   postgres:
     image: postgres:16-alpine
-    container_name: authorizer-postgres
+    container_name: core-banking-postgres
     environment:
       - POSTGRES_DB=transaction_authorization
       - POSTGRES_USER=app
@@ -16,6 +16,18 @@ services:
       timeout: 3s
       retries: 5
       start_period: 5s
+
+  redis:
+    image: redis:7-alpine
+    container_name: core-banking-redis
+    ports:
+      - "6379:6379"
+    command: ["redis-server", "--appendonly", "yes"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
 
   localstack:
     image: localstack/localstack:3.7.2
@@ -72,19 +84,24 @@ services:
     working_dir: /home
 
   # --- Synchronous authorization API (owns the schema / runs Flyway) ---
-  transaction-authorization-api:
+  core-banking-transaction-authorizer-api:
     build:
       context: .
-      dockerfile: transaction-authorization-api/Dockerfile
-    container_name: transaction-authorization-api
+      dockerfile: core-banking-transaction-authorizer-api/Dockerfile
+    container_name: core-banking-transaction-authorizer-api
     depends_on:
       postgres:
         condition: service_healthy
+      redis:
+        condition: service_healthy
     environment:
-      - SERVER_PORT=8080
-      - DB_URL=jdbc:postgresql://postgres:5432/transaction_authorization
-      - DB_USERNAME=app
-      - DB_PASSWORD=app
+      # Run with the 'local' profile, overriding hostnames for the Docker network.
+      - SPRING_PROFILES_ACTIVE=local
+      - SPRING_DATASOURCE_URL=jdbc:postgresql://postgres:5432/transaction_authorization
+      - SPRING_DATASOURCE_USERNAME=app
+      - SPRING_DATASOURCE_PASSWORD=app
+      - SPRING_DATA_REDIS_HOST=redis
+      - SPRING_DATA_REDIS_PORT=6379
     ports:
       - "127.0.0.1:8080:8080"
     healthcheck:
@@ -94,31 +111,32 @@ services:
       retries: 10
       start_period: 30s
 
-  # --- Asynchronous account onboarding listener (Flyway disabled) ---
-  account-onboarding-listener:
+  # --- Asynchronous account-created listener (Flyway disabled) ---
+  core-banking-account-created-listener:
     build:
       context: .
-      dockerfile: account-onboarding-listener/Dockerfile
-    container_name: account-onboarding-listener
+      dockerfile: core-banking-account-created-listener/Dockerfile
+    container_name: core-banking-account-created-listener
     depends_on:
       postgres:
         condition: service_healthy
       localstack:
         condition: service_healthy
       # Wait until the API has migrated the schema before validating against it.
-      transaction-authorization-api:
+      core-banking-transaction-authorizer-api:
         condition: service_healthy
     environment:
-      - SERVER_PORT=8081
-      - DB_URL=jdbc:postgresql://postgres:5432/transaction_authorization
-      - DB_USERNAME=app
-      - DB_PASSWORD=app
-      - AWS_REGION=sa-east-1
-      - AWS_SQS_ENDPOINT=http://localstack:4566
-      - AWS_SQS_QUEUE_URL=http://localstack:4566/000000000000/conta-bancaria-criada
-      - AWS_ACCESS_KEY_ID=test
-      - AWS_SECRET_ACCESS_KEY=test
-      - SQS_POLLING_ENABLED=true
+      # Run with the 'local' profile, overriding hostnames for the Docker network.
+      - SPRING_PROFILES_ACTIVE=local
+      - SPRING_DATASOURCE_URL=jdbc:postgresql://postgres:5432/transaction_authorization
+      - SPRING_DATASOURCE_USERNAME=app
+      - SPRING_DATASOURCE_PASSWORD=app
+      - APP_AWS_SQS_ENDPOINT=http://localstack:4566
+      - APP_AWS_SQS_QUEUE_URL=http://localstack:4566/000000000000/conta-bancaria-criada
+      - APP_AWS_SQS_REGION=sa-east-1
+      - APP_AWS_SQS_ACCESS_KEY=test
+      - APP_AWS_SQS_SECRET_KEY=test
+      - APP_AWS_SQS_POLLING_ENABLED=true
     ports:
       - "127.0.0.1:8081:8081"
     healthcheck:

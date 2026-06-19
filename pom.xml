@@ -19,15 +19,16 @@
     <description>Core banking transaction authorizer (Itau technical challenge) - multi-module</description>
 
     <modules>
-        <module>shared-kernel</module>
-        <module>transaction-authorization-api</module>
-        <module>account-onboarding-listener</module>
+        <module>core-banking-commons-domain</module>
+        <module>core-banking-transaction-authorizer-api</module>
+        <module>core-banking-account-created-listener</module>
     </modules>
 
     <properties>
         <java.version>21</java.version>
         <aws.sdk.version>2.29.20</aws.sdk.version>
         <springdoc.version>2.6.0</springdoc.version>
+        <testcontainers.version>1.21.3</testcontainers.version>
     </properties>
 
     <dependencyManagement>
@@ -35,7 +36,7 @@
             <!-- Internal modules -->
             <dependency>
                 <groupId>br.com.renan.corebanking</groupId>
-                <artifactId>shared-kernel</artifactId>
+                <artifactId>core-banking-commons-domain</artifactId>
                 <version>${project.version}</version>
             </dependency>
 

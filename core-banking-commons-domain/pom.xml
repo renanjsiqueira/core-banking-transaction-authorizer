@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>br.com.renan.corebanking</groupId>
+        <artifactId>core-banking-transaction-authorizer</artifactId>
+        <version>0.1.0</version>
+    </parent>
+
+    <artifactId>core-banking-commons-domain</artifactId>
+    <name>core-banking-commons-domain</name>
+    <description>Shared domain language for the banking context: enums and money conventions.</description>
+
+    <!-- Intentionally dependency-free (plain Java) to stay lightweight and
+         avoid coupling the two services through this module. -->
+</project>

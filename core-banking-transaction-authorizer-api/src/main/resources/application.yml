@@ -1,0 +1,70 @@
+spring:
+  application:
+    name: core-banking-transaction-authorizer-api
+
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/transaction_authorization}
+    username: ${DB_USERNAME:app}
+    password: ${DB_PASSWORD:app}
+    hikari:
+      pool-name: transaction-authorizer-api-pool
+      maximum-pool-size: ${DB_POOL_MAX_SIZE:20}
+      minimum-idle: ${DB_POOL_MIN_IDLE:5}
+      connection-timeout: 3000
+
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: validate
+    properties:
+      hibernate:
+        jdbc:
+          time_zone: UTC
+
+  # This service OWNS the schema: Flyway runs here.
+  flyway:
+    enabled: true
+    baseline-on-migrate: true
+
+  data:
+    redis:
+      host: ${SPRING_DATA_REDIS_HOST:localhost}
+      port: ${SPRING_DATA_REDIS_PORT:6379}
+
+# Redis is an auxiliary coordination layer only (distributed locks).
+# PostgreSQL remains the source of truth (ACID + pessimistic lock + unique PK).
+app:
+  redis-lock:
+    enabled: ${REDIS_LOCK_ENABLED:true}
+    account-lock-ttl: 30s
+    transaction-lock-ttl: 30s
+    wait-timeout: 2s
+    retry-delay: 50ms
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+  endpoint:
+    health:
+      probes:
+        enabled: true
+      show-details: when_authorized
+  metrics:
+    tags:
+      application: ${spring.application.name}
+
+springdoc:
+  api-docs:
+    path: /v3/api-docs
+  swagger-ui:
+    path: /swagger-ui.html
+
+server:
+  port: ${SERVER_PORT:8080}
+  shutdown: graceful
+
+logging:
+  level:
+    br.com.renan.corebanking: ${LOG_LEVEL:INFO}

@@ -1,0 +1,33 @@
+server:
+  port: 8081
+
+spring:
+  datasource:
+    url: jdbc:postgresql://localhost:5432/transaction_authorization
+    username: app
+    password: app
+  flyway:
+    enabled: false
+
+app:
+  aws:
+    sqs:
+      endpoint: http://localhost:4566
+      queue-url: http://localhost:4566/000000000000/conta-bancaria-criada
+      region: sa-east-1
+      access-key: test
+      secret-key: test
+      polling-enabled: true
+      max-number-of-messages: 10
+      wait-time-seconds: 10
+      polling-delay-ms: 1000
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+
+logging:
+  level:
+    br.com.renan.corebanking: DEBUG
