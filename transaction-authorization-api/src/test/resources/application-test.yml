@@ -1,0 +1,29 @@
+# Integration-test profile. Datasource URL/username/password are injected at
+# runtime by @DynamicPropertySource from the Testcontainers PostgreSQL.
+spring:
+  datasource:
+    hikari:
+      # Headroom for concurrency tests (each thread holds a connection while
+      # waiting on the pessimistic row lock).
+      maximum-pool-size: 30
+      connection-timeout: 20000
+
+  jpa:
+    open-in-view: false
+    hibernate:
+      # Flyway owns the schema; Hibernate only validates the mapping against it.
+      ddl-auto: validate
+    properties:
+      hibernate:
+        jdbc:
+          time_zone: UTC
+
+  flyway:
+    enabled: true
+
+logging:
+  level:
+    root: WARN
+    br.com.renan.corebanking: INFO
+    org.flywaydb: INFO
+    org.testcontainers: INFO

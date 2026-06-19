@@ -71,5 +71,62 @@ services:
       "
     working_dir: /home
 
+  # --- Synchronous authorization API (owns the schema / runs Flyway) ---
+  transaction-authorization-api:
+    build:
+      context: .
+      dockerfile: transaction-authorization-api/Dockerfile
+    container_name: transaction-authorization-api
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      - SERVER_PORT=8080
+      - DB_URL=jdbc:postgresql://postgres:5432/transaction_authorization
+      - DB_USERNAME=app
+      - DB_PASSWORD=app
+    ports:
+      - "127.0.0.1:8080:8080"
+    healthcheck:
+      test: [ "CMD", "curl", "-f", "http://localhost:8080/actuator/health" ]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  # --- Asynchronous account onboarding listener (Flyway disabled) ---
+  account-onboarding-listener:
+    build:
+      context: .
+      dockerfile: account-onboarding-listener/Dockerfile
+    container_name: account-onboarding-listener
+    depends_on:
+      postgres:
+        condition: service_healthy
+      localstack:
+        condition: service_healthy
+      # Wait until the API has migrated the schema before validating against it.
+      transaction-authorization-api:
+        condition: service_healthy
+    environment:
+      - SERVER_PORT=8081
+      - DB_URL=jdbc:postgresql://postgres:5432/transaction_authorization
+      - DB_USERNAME=app
+      - DB_PASSWORD=app
+      - AWS_REGION=sa-east-1
+      - AWS_SQS_ENDPOINT=http://localstack:4566
+      - AWS_SQS_QUEUE_URL=http://localstack:4566/000000000000/conta-bancaria-criada
+      - AWS_ACCESS_KEY_ID=test
+      - AWS_SECRET_ACCESS_KEY=test
+      - SQS_POLLING_ENABLED=true
+    ports:
+      - "127.0.0.1:8081:8081"
+    healthcheck:
+      test: [ "CMD", "curl", "-f", "http://localhost:8081/actuator/health" ]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
 volumes:
   postgres-data:

@@ -1,228 +1,117 @@
-# Transaction Authorization API
+# Core Banking — Transaction Authorizer
 
-API de autorização de transações financeiras (crédito/débito) para core banking,
-em **Java 21 + Spring Boot 3**, com arquitetura **MVC em camadas**.
+Solução do desafio técnico de **autorização de transações financeiras** para core
+banking, em **Java 21 + Spring Boot 3**, organizada como um **monorepo Maven
+multi-módulo** com **dois serviços** e um kernel compartilhado.
 
-O serviço consome eventos de **abertura de conta** de uma fila **AWS SQS**
-(`conta-bancaria-criada`) e — nas próximas fases — exporá um endpoint REST para
-autorizar transações. **Esta fase (1)** entrega apenas a infraestrutura local e o
-wiring do cliente SQS; nenhuma regra de negócio foi implementada ainda.
+## Serviços
 
----
+| Módulo | Tipo | Responsabilidade | Porta |
+|---|---|---|---|
+| `transaction-authorization-api` | síncrono | `POST /transactions/{transactionId}` — autorização CREDIT/DEBIT. **Owner do schema (Flyway).** | 8080 |
+| `account-onboarding-listener` | assíncrono | Consome a fila SQS `conta-bancaria-criada` e importa contas. **Flyway desabilitado.** | 8081 |
+| `shared-kernel` | biblioteca | Tipos comuns: enums, convenções de dinheiro. Sem regra de negócio pesada. | — |
 
-## Stack
+Ambos compartilham **um único PostgreSQL** (mesmo bounded context). A decisão
+está documentada em [docs/adr/0001-two-services-architecture.md](docs/adr/0001-two-services-architecture.md).
 
-- Java 21, Spring Boot 3.3
-- PostgreSQL 16 (via Docker)
-- AWS SQS via LocalStack (AWS SDK v2)
-- Flyway (habilitado; migrations virão nas próximas fases)
-- Actuator + Micrometer/Prometheus
-- springdoc-openapi (Swagger UI)
+Documentação adicional: [arquitetura](docs/architecture.md) ·
+[deploy em cloud](docs/cloud-deployment.md) · [pipeline CI/CD](docs/pipeline.md).
 
-## Estrutura de pacotes (MVC)
+## Estrutura
 
 ```
-br.com.renan.transactionauthorization
-├── config          # configurações (ex.: AwsSqsConfig, SqsProperties)
-├── controller      # endpoints REST
-├── dto             # objetos de transporte da API
-├── entity          # entidades JPA
-├── enums           # enumerações de domínio
-├── exception       # exceções e handlers
-├── mapper          # conversões entity <-> dto
-├── repository      # repositórios Spring Data
-├── service         # regras de negócio
-├── sqs             # consumidor/integração SQS
-└── observability   # métricas / health customizados
+core-banking-transaction-authorizer/
+├── pom.xml                       # parent/aggregator
+├── docker-compose.yml
+├── shared-kernel/
+├── transaction-authorization-api/
+├── account-onboarding-listener/
+└── docs/  (architecture, cloud-deployment, pipeline, adr/)
 ```
 
 ---
 
 ## Pré-requisitos
 
-- **JDK 21**
-- **Maven 3.9+** (ou use o wrapper, se presente)
+- **JDK 21**, **Maven 3.9+**
 - **Docker** + **Docker Compose v2**
 - (Opcional) **AWS CLI** para inspecionar a fila SQS
 
----
-
-## 1. Subir a infraestrutura local (Docker Compose)
-
-O `docker-compose.yml` sobe três serviços:
-
-| Serviço            | Descrição                                                        |
-|--------------------|------------------------------------------------------------------|
-| `postgres`         | PostgreSQL 16 (`transaction_authorization`, user/pass `app`/`app`) |
-| `localstack`       | AWS SQS local (porta `4566`)                                     |
-| `message-generator`| Cria a fila `conta-bancaria-criada` e publica **100.000** contas |
+## Build e testes
 
 ```bash
-docker compose up
+mvn clean test
 ```
 
-Aguarde até ver no terminal:
-
-```
-message-generator exited with code 0
-```
-
-Isso indica que a fila foi populada com 100.000 contas. O PostgreSQL e o
-LocalStack permanecem rodando.
-
-> Para rodar em segundo plano: `docker compose up -d`
-> Para derrubar e limpar o volume: `docker compose down -v`
+> Os testes de integração usam **PostgreSQL real via Testcontainers** (nunca H2)
+> e exigem **Docker em execução**. Sem Docker, rode apenas os unitários:
+> `mvn clean test -Dtest='!*IntegrationTest' -Dsurefire.failIfNoSpecifiedTests=false`.
 
 ---
 
-## 2. Verificar saúde do LocalStack
+## Subir tudo com Docker Compose
+
+O `docker-compose.yml` sobe: `postgres`, `localstack` (SQS), `message-generator`
+(cria a fila e publica **100.000** contas), `transaction-authorization-api` e
+`account-onboarding-listener`.
+
+```bash
+docker compose up --build
+```
+
+Aguarde `message-generator exited with code 0` (fila populada). A API roda as
+migrations no startup; o listener sobe depois da API (via `depends_on` healthy) e
+começa a drenar a fila.
+
+- API health: http://localhost:8080/actuator/health
+- Listener health: http://localhost:8081/actuator/health
+- Swagger (API): http://localhost:8080/swagger-ui.html
+
+> Derrubar e limpar o volume: `docker compose down -v`.
+
+---
+
+## Rodar os serviços localmente (sem Docker para a app)
+
+Suba só a infraestrutura e rode cada serviço com o profile `local`:
+
+```bash
+docker compose up -d postgres localstack message-generator
+
+# Terminal 1 — API (porta 8080, roda Flyway)
+mvn -pl transaction-authorization-api -am spring-boot:run \
+  -Dspring-boot.run.profiles=local
+
+# Terminal 2 — Listener (porta 8081, consome SQS)
+mvn -pl account-onboarding-listener -am spring-boot:run \
+  -Dspring-boot.run.profiles=local
+```
+
+> Inicie a **API antes** do listener: a API cria o schema (Flyway) que o listener
+> apenas valida.
+
+### Verificar LocalStack e a fila SQS
 
 ```bash
 curl -s http://localhost:4566/_localstack/health | jq .
-```
 
-O serviço `sqs` deve aparecer como `available`/`running`.
-
----
-
-## 3. Verificar a fila SQS via AWS CLI
-
-```bash
 export AWS_DEFAULT_REGION=sa-east-1
 export AWS_ACCESS_KEY_ID=test
 export AWS_SECRET_ACCESS_KEY=test
 
-# Listar filas
-aws --endpoint-url=http://localhost:4566 sqs list-queues
-
-# Ver atributos (ApproximateNumberOfMessages deve refletir as 100.000 contas)
-aws --endpoint-url=http://localhost:4566 sqs get-queue-attributes \
-  --queue-url http://localhost:4566/000000000000/conta-bancaria-criada \
-  --attribute-names All
-
-# Espiar algumas mensagens
 aws --endpoint-url=http://localhost:4566 --region sa-east-1 sqs receive-message \
   --queue-url http://localhost:4566/000000000000/conta-bancaria-criada \
   --max-number-of-messages 10
 ```
 
-Exemplo de payload de uma mensagem:
-
-```json
-{
-  "account": {
-    "id": "5b19c8b6-0cc4-4c72-a989-0c2ee15fa975",
-    "owner": "315e3cfe-f4af-4cd2-b298-a449e614349a",
-    "created_at": "1634874339",
-    "status": "ENABLED"
-  }
-}
-```
-
 ---
 
-## 4. Rodar a aplicação localmente (profile `local`)
+## API de autorização
 
-Com a infraestrutura no ar:
+`POST /transactions/{transactionId}`
 
-```bash
-mvn spring-boot:run -Dspring-boot.run.profiles=local
-```
-
-Ou empacotando o jar:
-
-```bash
-mvn clean package
-java -jar target/transaction-authorization.jar --spring.profiles.active=local
-```
-
-O profile `local` aponta o datasource para o PostgreSQL do compose e o cliente
-SQS para o LocalStack (`http://localhost:4566`).
-
----
-
-## 5. Swagger e Actuator
-
-Com a aplicação no ar (`http://localhost:8080`):
-
-- **Swagger UI:** http://localhost:8080/swagger-ui.html
-- **OpenAPI JSON:** http://localhost:8080/v3/api-docs
-- **Health (Actuator):** http://localhost:8080/actuator/health
-- **Health customizado:** http://localhost:8080/health
-- **Métricas Prometheus:** http://localhost:8080/actuator/prometheus
-
----
-
-## Modelo de dados
-
-Duas tabelas, criadas via Flyway (`V1` e `V2`):
-
-- **`accounts`** — armazena o **saldo atual** (`balance_amount`) e o **status** da
-  conta (`ENABLED`/`DISABLED`/`BLOCKED`), além de owner, moeda e timestamps de
-  origem/importação. Cada conta é importada com saldo **zero** e moeda **BRL**.
-- **`transactions`** — armazena **cada tentativa de autorização** (o "ledger"):
-  tipo (`CREDIT`/`DEBIT`), valor, moeda, status (`SUCCEEDED`/`FAILED`) e, quando
-  recusada, o `failure_reason`.
-
-Decisões relevantes:
-
-- O **`transaction id`** é a chave primária da transação e, em fase posterior,
-  será usado como **chave de idempotência** do endpoint de autorização.
-- Valores monetários usam **`BigDecimal` / `NUMERIC(19,2)`** — aritmética decimal
-  exata; `double` nunca é usado para dinheiro.
-- A coluna **`version`** da conta existe para **controle de concorrência via
-  optimistic locking** em caminhos não-críticos; a autorização crítica (débito)
-  usará **lock pessimista** numa fase posterior.
-- A transação referencia a conta apenas por `account_id` (sem `@ManyToOne`),
-  mantendo o caminho de escrita simples e performático.
-
-### Persistência
-
-A aplicação usa PostgreSQL como banco relacional ACID. A tabela `accounts` mantém o saldo atual da conta e a tabela `transactions` registra cada tentativa de autorização. A busca da conta para autorização usa lock pessimista, garantindo consistência em cenários concorrentes.
-
-> **Testes de integração:** usam **PostgreSQL real via Testcontainers** (nunca H2),
-> portanto exigem **Docker em execução**. Rode com `mvn test`. Sem Docker, apenas
-> os testes unitários executam; os de integração falham ao não encontrar o daemon.
-
-### Importação de contas via SQS
-
-A aplicação consome mensagens da fila `conta-bancaria-criada` criada no LocalStack. Cada mensagem representa uma conta aberta por um sistema externo. As contas são importadas com saldo inicial zero e moeda BRL. O processamento é idempotente: mensagens duplicadas não criam contas duplicadas.
-
-O consumidor (`AccountCreatedSqsConsumer`) roda apenas quando
-`app.aws.sqs.polling-enabled=true` (ativado no profile `local`), via `@Scheduled`
-com long polling. Uma mensagem só é **deletada após sucesso**; em erro
-inesperado ela permanece na fila para reprocessamento (at-least-once), o que é
-seguro porque a importação é idempotente.
-
-Inspecionar a fila via AWS CLI:
-
-```bash
-export AWS_DEFAULT_REGION=sa-east-1
-export AWS_ACCESS_KEY_ID=test
-export AWS_SECRET_ACCESS_KEY=test
-
-aws --endpoint-url=http://localhost:4566 \
-  --region sa-east-1 \
-  sqs receive-message \
-  --queue-url http://localhost:4566/000000000000/conta-bancaria-criada \
-  --max-number-of-messages 10
-```
-
-Métricas Micrometer expostas (refinadas na fase de observabilidade):
-`accounts.imported.total`, `accounts.duplicates.total`,
-`sqs.account-created.messages.processed.total`,
-`sqs.account-created.messages.failed.total`.
-
-### API de autorização
-
-A aplicação expõe o endpoint `POST /transactions/{transactionId}` para processar autorizações de crédito e débito. O contrato segue o formato solicitado no desafio, retornando os dados da transação, status da autorização e saldo atual da conta.
-
-> **Estado atual (Fase 5):** controller, DTOs, validações e tratamento de erros
-> (`ProblemDetail`) estão prontos. A regra real de saldo (crédito/débito com lock
-> pessimista) e a idempotência por `transactionId` chegam na próxima fase — o
-> service atual é um placeholder que ecoa a requisição como `SUCCEEDED`.
-
-**Request** — `POST /transactions/8e8ae808-b154-48b5-9f3e-553935cc4543`
+**Request**
 
 ```json
 {
@@ -250,33 +139,47 @@ A aplicação expõe o endpoint `POST /transactions/{transactionId}` para proces
 }
 ```
 
-**Erros** (RFC 7807 `application/problem+json`):
-
 | Situação | HTTP |
 |---|---|
-| Validação do request / `transactionId` inválido / moeda ≠ BRL | `400 Bad Request` |
+| `SUCCEEDED` ou `FAILED` por regra de negócio (saldo insuficiente / conta desabilitada) | `200 OK` |
+| Validação / `transactionId` inválido / moeda ≠ BRL | `400 Bad Request` |
 | Conta não encontrada | `404 Not Found` |
 | Conflito de idempotência | `409 Conflict` |
 | Erro inesperado | `500 Internal Server Error` |
 
-### Consistência transacional e idempotência
+### Regras de negócio
 
-A autorização de transações é executada dentro de uma transação ACID no PostgreSQL. Para evitar race conditions em operações concorrentes sobre a mesma conta, a aplicação busca a conta com lock pessimista (`PESSIMISTIC_WRITE`) antes de alterar o saldo.
+- Conta inexistente → `404`; conta não-`ENABLED` → `FAILED (ACCOUNT_DISABLED)`, saldo intacto.
+- `CREDIT` soma; `DEBIT` subtrai. `DEBIT` que resultaria em saldo negativo → `FAILED (INSUFFICIENT_FUNDS)`, saldo intacto.
+- Saldo em `BigDecimal` / `NUMERIC(19,2)`; moeda suportada: `BRL`.
 
-O `transactionId` recebido na URL é usado como chave de idempotência. Caso a mesma transação seja enviada novamente com o mesmo payload, a aplicação retorna o resultado previamente processado sem aplicar o saldo novamente. Caso o mesmo `transactionId` seja reutilizado com payload diferente, a API retorna `409 CONFLICT`.
+---
 
-Resumo das regras de negócio:
+## Consistência transacional e idempotência
 
-- Conta inexistente → `404`; conta não-`ENABLED` → transação `FAILED` (`ACCOUNT_DISABLED`), saldo intacto.
-- `CREDIT` soma; `DEBIT` subtrai. `DEBIT` que resultaria em saldo negativo → `FAILED` (`INSUFFICIENT_FUNDS`), saldo intacto.
-- Resultados de negócio (`SUCCEEDED`/`FAILED`) retornam `200 OK`; o status fica no corpo.
-- Saldo sempre em `BigDecimal` (escala 2); moeda suportada: `BRL`.
+A autorização roda numa transação ACID no PostgreSQL. A conta é lida com **lock
+pessimista** (`PESSIMISTIC_WRITE`) antes de alterar o saldo, serializando
+operações concorrentes na mesma conta. O `transactionId` é a **chave de
+idempotência**: replay com mesmo payload retorna o resultado anterior (sem
+reaplicar saldo); com payload diferente retorna `409 CONFLICT`.
 
-## Roadmap (próximas fases)
+## Importação de contas via SQS
 
-2. Domínio: enums, entidades JPA, mapeamentos
-3. Persistência: migrations Flyway, repositórios
-4. Consumidor SQS de abertura de contas (idempotente, resiliente)
-5. Endpoint `POST /transactions/{transactionId}` e regra de saldo
-6. Observabilidade e padrões de resiliência (retry, backoff, circuit breaker)
-7. Documentação: ADRs, diagramas (C4 + cloud), pipeline CI/CD, coleção de requisições
+O listener consome `conta-bancaria-criada` com long polling. Contas são
+importadas com saldo zero e moeda BRL; o processamento é **idempotente** (não
+duplica) e a mensagem só é **deletada após sucesso** (entrega at-least-once).
+
+## Persistência e migrations
+
+O PostgreSQL é o banco relacional ACID compartilhado. As **migrations Flyway
+ficam apenas na `transaction-authorization-api`** (owner do schema); o listener
+usa `spring.flyway.enabled=false` e apenas valida o mapeamento. Em produção, as
+migrations seriam executadas por um **job/step de pipeline antes do deploy** dos
+serviços (ver [docs/pipeline.md](docs/pipeline.md)).
+
+## Observabilidade
+
+Ambos expõem Actuator (`/actuator/health`, `/actuator/prometheus`) e métricas
+Micrometer. O listener publica `accounts.imported.total`,
+`accounts.duplicates.total`, `sqs.account-created.messages.processed.total`,
+`sqs.account-created.messages.failed.total`.
