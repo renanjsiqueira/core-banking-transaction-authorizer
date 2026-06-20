@@ -1,0 +1,195 @@
+name: Build and deploy production
+
+on:
+  push:
+    branches:
+      - master
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: production-deploy
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: ${{ vars.AWS_REGION }}
+  AWS_ACCOUNT_ID: ${{ vars.AWS_ACCOUNT_ID }}
+  EKS_CLUSTER_NAME: ${{ vars.EKS_CLUSTER_NAME }}
+  API_ECR_REPOSITORY: core-banking-transaction-authorizer-api
+  LISTENER_ECR_REPOSITORY: core-banking-account-created-listener
+  IMAGE_TAG: ${{ github.sha }}
+
+jobs:
+  verify:
+    name: Build and test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: maven
+
+      - name: Run Maven verification
+        run: ./scripts/build-all.sh -q
+
+  build-and-push:
+    name: Build images and push to ECR
+    runs-on: ubuntu-latest
+    needs: verify
+    env:
+      AWS_ROLE_TO_ASSUME: ${{ secrets.AWS_ROLE_TO_ASSUME }}
+    outputs:
+      ecr-registry: ${{ steps.login-ecr.outputs.registry }}
+      image-tag: ${{ github.sha }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validate AWS build configuration
+        shell: bash
+        run: |
+          set -euo pipefail
+          required=(AWS_REGION AWS_ROLE_TO_ASSUME)
+          for key in "${required[@]}"; do
+            if [ -z "${!key:-}" ]; then
+              echo "::error title=Missing AWS build configuration::$key is not configured in GitHub vars/secrets."
+              exit 1
+            fi
+          done
+
+      - name: Configure AWS credentials with OIDC
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-region: ${{ env.AWS_REGION }}
+          role-to-assume: ${{ env.AWS_ROLE_TO_ASSUME }}
+          role-session-name: core-banking-prod-build-${{ github.run_id }}
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and push transaction authorizer API
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: core-banking-transaction-authorizer-api/Dockerfile
+          push: true
+          tags: |
+            ${{ steps.login-ecr.outputs.registry }}/${{ env.API_ECR_REPOSITORY }}:${{ env.IMAGE_TAG }}
+            ${{ steps.login-ecr.outputs.registry }}/${{ env.API_ECR_REPOSITORY }}:prod-latest
+          cache-from: type=gha,scope=transaction-authorizer-api
+          cache-to: type=gha,mode=max,scope=transaction-authorizer-api
+
+      - name: Build and push account-created listener
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: core-banking-account-created-listener/Dockerfile
+          push: true
+          tags: |
+            ${{ steps.login-ecr.outputs.registry }}/${{ env.LISTENER_ECR_REPOSITORY }}:${{ env.IMAGE_TAG }}
+            ${{ steps.login-ecr.outputs.registry }}/${{ env.LISTENER_ECR_REPOSITORY }}:prod-latest
+          cache-from: type=gha,scope=account-created-listener
+          cache-to: type=gha,mode=max,scope=account-created-listener
+
+  deploy-prod:
+    name: Deploy to EKS production
+    runs-on: ubuntu-latest
+    needs: build-and-push
+    environment:
+      name: prod
+    env:
+      ECR_REGISTRY: ${{ needs.build-and-push.outputs.ecr-registry }}
+      IMAGE_TAG: ${{ needs.build-and-push.outputs.image-tag }}
+      PROD_RDS_PROXY_ENDPOINT: ${{ vars.PROD_RDS_PROXY_ENDPOINT }}
+      PROD_VALKEY_ENDPOINT: ${{ vars.PROD_VALKEY_ENDPOINT }}
+      PROD_SQS_QUEUE_URL: ${{ vars.PROD_SQS_QUEUE_URL }}
+      PROD_DB_USERNAME: ${{ secrets.PROD_DB_USERNAME }}
+      PROD_DB_PASSWORD: ${{ secrets.PROD_DB_PASSWORD }}
+      AWS_ROLE_TO_ASSUME: ${{ secrets.AWS_ROLE_TO_ASSUME }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validate required GitHub variables and secrets
+        shell: bash
+        run: |
+          set -euo pipefail
+          required=(
+            AWS_REGION
+            AWS_ACCOUNT_ID
+            EKS_CLUSTER_NAME
+            AWS_ROLE_TO_ASSUME
+            ECR_REGISTRY
+            IMAGE_TAG
+            PROD_RDS_PROXY_ENDPOINT
+            PROD_VALKEY_ENDPOINT
+            PROD_SQS_QUEUE_URL
+            PROD_DB_USERNAME
+            PROD_DB_PASSWORD
+          )
+          for key in "${required[@]}"; do
+            if [ -z "${!key:-}" ]; then
+              echo "::error title=Missing deployment configuration::$key is not configured in GitHub vars/secrets."
+              exit 1
+            fi
+          done
+
+      - name: Configure AWS credentials with OIDC
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-region: ${{ env.AWS_REGION }}
+          role-to-assume: ${{ env.AWS_ROLE_TO_ASSUME }}
+          role-session-name: core-banking-prod-deploy-${{ github.run_id }}
+
+      - name: Configure kubectl for EKS
+        run: aws eks update-kubeconfig --region "$AWS_REGION" --name "$EKS_CLUSTER_NAME"
+
+      - name: Render production manifest
+        shell: bash
+        run: |
+          set -euo pipefail
+          escape_sed_replacement() {
+            printf '%s' "$1" | sed -e 's/[\/&|]/\\&/g'
+          }
+
+          PROD_RDS_PROXY_ENDPOINT_ESCAPED="$(escape_sed_replacement "$PROD_RDS_PROXY_ENDPOINT")"
+          PROD_VALKEY_ENDPOINT_ESCAPED="$(escape_sed_replacement "$PROD_VALKEY_ENDPOINT")"
+          PROD_SQS_QUEUE_URL_ESCAPED="$(escape_sed_replacement "$PROD_SQS_QUEUE_URL")"
+          PROD_DB_USERNAME_ESCAPED="$(escape_sed_replacement "$PROD_DB_USERNAME")"
+          PROD_DB_PASSWORD_ESCAPED="$(escape_sed_replacement "$PROD_DB_PASSWORD")"
+
+          cp k8s/prod.yaml /tmp/prod.yaml
+          sed -i "s|333333333333.dkr.ecr.sa-east-1.amazonaws.com/${API_ECR_REPOSITORY}:prod|${ECR_REGISTRY}/${API_ECR_REPOSITORY}:${IMAGE_TAG}|g" /tmp/prod.yaml
+          sed -i "s|333333333333.dkr.ecr.sa-east-1.amazonaws.com/${LISTENER_ECR_REPOSITORY}:prod|${ECR_REGISTRY}/${LISTENER_ECR_REPOSITORY}:${IMAGE_TAG}|g" /tmp/prod.yaml
+          sed -i "s|333333333333|${AWS_ACCOUNT_ID}|g" /tmp/prod.yaml
+          sed -i "s|prod-rds-proxy.core-banking.local|${PROD_RDS_PROXY_ENDPOINT_ESCAPED}|g" /tmp/prod.yaml
+          sed -i "s|prod-valkey.core-banking.cache.amazonaws.com|${PROD_VALKEY_ENDPOINT_ESCAPED}|g" /tmp/prod.yaml
+          sed -i "s|https://sqs.sa-east-1.amazonaws.com/${AWS_ACCOUNT_ID}/conta-bancaria-criada|${PROD_SQS_QUEUE_URL_ESCAPED}|g" /tmp/prod.yaml
+          sed -i "s|DB_USERNAME: app|DB_USERNAME: ${PROD_DB_USERNAME_ESCAPED}|g" /tmp/prod.yaml
+          sed -i "s|DB_PASSWORD: replace-me-prod|DB_PASSWORD: ${PROD_DB_PASSWORD_ESCAPED}|g" /tmp/prod.yaml
+
+      - name: Apply production manifest
+        run: kubectl apply -f /tmp/prod.yaml
+
+      - name: Wait for rollout
+        run: |
+          kubectl rollout status deployment/core-banking-transaction-authorizer-api -n core-banking-prod --timeout=5m
+          kubectl rollout status deployment/core-banking-account-created-listener -n core-banking-prod --timeout=5m
+
+      - name: Roll back on failure
+        if: failure()
+        run: |
+          kubectl rollout undo deployment/core-banking-transaction-authorizer-api -n core-banking-prod || true
+          kubectl rollout undo deployment/core-banking-account-created-listener -n core-banking-prod || true

@@ -39,3 +39,38 @@ ruim**, de forma que um bug nunca atinja 100% dos clientes de uma vez.
 Cada serviço faz deploy de forma independente (imagens separadas, rollouts
 separados). O schema compartilhado é o único acoplamento — protegido pelo job de
 migration rodando primeiro e por migrations retrocompatíveis.
+
+## GitHub Actions proposto
+
+O workflow [`.github/workflows/deploy-prod.yml`](../.github/workflows/deploy-prod.yml)
+representa a esteira automatizada para `master`:
+
+1. Executa `./scripts/build-all.sh -q`.
+2. Assume uma IAM Role na AWS via OIDC.
+3. Builda as imagens Docker dos dois serviços.
+4. Publica as imagens no Amazon ECR com tag do commit SHA.
+5. Renderiza o manifest `k8s/prod.yaml` com os valores reais do ambiente.
+6. Aplica o deploy no EKS e aguarda `rollout status`.
+7. Executa rollback dos deployments se o rollout falhar.
+
+Para funcionar em uma conta real, faltaria configurar no GitHub:
+
+**Repository variables**
+
+- `AWS_REGION`
+- `AWS_ACCOUNT_ID`
+- `EKS_CLUSTER_NAME`
+- `PROD_RDS_PROXY_ENDPOINT`
+- `PROD_VALKEY_ENDPOINT`
+- `PROD_SQS_QUEUE_URL`
+
+**Repository secrets**
+
+- `AWS_ROLE_TO_ASSUME`
+- `PROD_DB_USERNAME`
+- `PROD_DB_PASSWORD`
+
+A role `AWS_ROLE_TO_ASSUME` deve confiar no OIDC do GitHub Actions e restringir
+o `sub` para este repositório/branch ou para o environment `prod`. O environment
+`prod` pode ter aprovação manual para reduzir risco antes de publicar em
+produção.
