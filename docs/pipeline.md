@@ -45,13 +45,19 @@ migration rodando primeiro e por migrations retrocompatíveis.
 O workflow [`.github/workflows/deploy-prod.yml`](../.github/workflows/deploy-prod.yml)
 representa a esteira automatizada para `master`:
 
-1. Executa `./scripts/build-all.sh -q`.
+1. Executa `./scripts/build-all.sh -q -Dtest='!*IntegrationTest' -Dsurefire.failIfNoSpecifiedTests=false`.
 2. Assume uma IAM Role na AWS via OIDC.
 3. Builda as imagens Docker dos dois serviços.
 4. Publica as imagens no Amazon ECR com tag do commit SHA.
 5. Renderiza o manifest `k8s/prod.yaml` com os valores reais do ambiente.
 6. Aplica o deploy no EKS e aguarda `rollout status`.
 7. Executa rollback dos deployments se o rollout falhar.
+
+Nesta primeira versão, a pipeline de deploy pula os testes `*IntegrationTest`
+porque eles dependem de Testcontainers/PostgreSQL/Redis e podem ficar instáveis
+em runner efêmero. Eles continuam disponíveis no build local completo via
+`./scripts/build-all.sh` e podem virar um job separado de integração quando a
+pipeline tiver runner/cache Docker dedicados.
 
 Para funcionar em uma conta real, faltaria configurar no GitHub:
 

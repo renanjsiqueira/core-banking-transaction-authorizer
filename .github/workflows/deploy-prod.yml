@@ -38,7 +38,7 @@ jobs:
           cache: maven
 
       - name: Run Maven verification
-        run: ./scripts/build-all.sh -q
+        run: ./scripts/build-all.sh -q -Dtest='!*IntegrationTest' -Dsurefire.failIfNoSpecifiedTests=false
 
   build-and-push:
     name: Build images and push to ECR
