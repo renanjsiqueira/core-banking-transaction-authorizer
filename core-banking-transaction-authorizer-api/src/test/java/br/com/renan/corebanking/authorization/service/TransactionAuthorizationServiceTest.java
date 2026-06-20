@@ -59,8 +59,8 @@ class TransactionAuthorizationServiceTest {
                 accountRepository, transactionRepository, new TransactionResponseMapper(),
                 lockService, new RedisLockProperties(), transactionOperations, metrics);
 
-        when(lockService.executeWithLock(any(), any(), any(), any(), any()))
-                .thenAnswer(invocation -> ((Supplier<?>) invocation.getArgument(4)).get());
+        when(lockService.executeWithLock(any(), any(), any(), any(), any(), any()))
+                .thenAnswer(invocation -> ((Supplier<?>) invocation.getArgument(5)).get());
         when(transactionOperations.execute(any())).thenAnswer(invocation -> {
             TransactionCallback<?> callback = invocation.getArgument(0);
             return callback.doInTransaction(new SimpleTransactionStatus());
@@ -90,8 +90,8 @@ class TransactionAuthorizationServiceTest {
         assertThat(response.account().balance().amount()).isEqualByComparingTo("150.00");
         verify(accountRepository).save(account);
 
-        verify(lockService).executeWithLock(startsWith("lock:transaction:"), any(), any(), any(), any());
-        verify(lockService).executeWithLock(startsWith("lock:account:"), any(), any(), any(), any());
+        verify(lockService).executeWithLock(startsWith("lock:transaction:"), any(), any(), any(), any(), any());
+        verify(lockService).executeWithLock(startsWith("lock:account:"), any(), any(), any(), any(), any());
         verify(accountRepository).findByIdForUpdate(account.getId());
         verify(metrics).recordAuthorization(any(Transaction.class));
     }
@@ -100,7 +100,7 @@ class TransactionAuthorizationServiceTest {
     void whenTransactionLockFailsDoesNotProcess() {
         UUID accountId = UUID.randomUUID();
         doThrow(new ResourceLockedException("lock:transaction"))
-                .when(lockService).executeWithLock(startsWith("lock:transaction:"), any(), any(), any(), any());
+                .when(lockService).executeWithLock(startsWith("lock:transaction:"), any(), any(), any(), any(), any());
 
         assertThatThrownBy(() -> service.authorize(
                 UUID.randomUUID(), TransactionRequestTestFactory.credit(accountId, "10.00")))
@@ -114,7 +114,7 @@ class TransactionAuthorizationServiceTest {
     void whenAccountLockFailsDoesNotProcess() {
         UUID accountId = UUID.randomUUID();
         doThrow(new ResourceLockedException("lock:account"))
-                .when(lockService).executeWithLock(startsWith("lock:account:"), any(), any(), any(), any());
+                .when(lockService).executeWithLock(startsWith("lock:account:"), any(), any(), any(), any(), any());
 
         assertThatThrownBy(() -> service.authorize(
                 UUID.randomUUID(), TransactionRequestTestFactory.credit(accountId, "10.00")))

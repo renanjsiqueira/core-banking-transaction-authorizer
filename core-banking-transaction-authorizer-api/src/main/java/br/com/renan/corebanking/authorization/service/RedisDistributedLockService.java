@@ -3,6 +3,7 @@ package br.com.renan.corebanking.authorization.service;
 import java.time.Duration;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.ThreadLocalRandom;
 import java.util.function.Supplier;
 
 import org.slf4j.Logger;
@@ -48,14 +49,17 @@ public class RedisDistributedLockService {
                                  Duration ttl,
                                  Duration waitTimeout,
                                  Duration retryDelay,
+                                 Duration maxRetryDelay,
                                  Supplier<T> operation) {
         String owner = instanceId + ":" + UUID.randomUUID();
         long start = System.nanoTime();
         long deadline = start + waitTimeout.toNanos();
 
         boolean acquired = tryLock(key, owner, ttl);
+        int attempt = 0;
         while (!acquired && System.nanoTime() < deadline) {
-            sleep(retryDelay);
+            sleep(cappedByRemainingWait(
+                    calculateFullJitterDelay(retryDelay, maxRetryDelay, attempt++), deadline));
             acquired = tryLock(key, owner, ttl);
         }
 
@@ -72,9 +76,49 @@ public class RedisDistributedLockService {
         }
     }
 
-    private void sleep(Duration retryDelay) {
+    static Duration calculateFullJitterDelay(Duration retryDelay, Duration maxRetryDelay, int attempt) {
+        long capNanos = calculateBackoffCap(retryDelay, maxRetryDelay, attempt).toNanos();
+        long jitterNanos = ThreadLocalRandom.current().nextLong(capNanos + 1);
+        return Duration.ofNanos(jitterNanos);
+    }
+
+    static Duration calculateBackoffCap(Duration retryDelay, Duration maxRetryDelay, int attempt) {
+        long baseNanos = positiveNanos(retryDelay);
+        long maxNanos = Math.max(baseNanos, positiveNanos(maxRetryDelay));
+        long capNanos = baseNanos;
+
+        for (int i = 0; i < attempt && capNanos < maxNanos; i++) {
+            if (capNanos > maxNanos / 2) {
+                capNanos = maxNanos;
+            } else {
+                capNanos *= 2;
+            }
+        }
+        return Duration.ofNanos(capNanos);
+    }
+
+    private static long positiveNanos(Duration duration) {
+        return Math.max(1, duration.toNanos());
+    }
+
+    private static Duration cappedByRemainingWait(Duration delay, long deadlineNanos) {
+        long remainingNanos = deadlineNanos - System.nanoTime();
+        if (remainingNanos <= 0) {
+            return Duration.ZERO;
+        }
+        return delay.compareTo(Duration.ofNanos(remainingNanos)) <= 0
+                ? delay
+                : Duration.ofNanos(remainingNanos);
+    }
+
+    private void sleep(Duration delay) {
+        if (delay.isZero() || delay.isNegative()) {
+            return;
+        }
         try {
-            Thread.sleep(Math.max(1, retryDelay.toMillis()));
+            long millis = delay.toMillis();
+            int nanos = (int) delay.minusMillis(millis).toNanos();
+            Thread.sleep(millis, nanos);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             throw new ResourceLockedException("interrupted while waiting for lock");

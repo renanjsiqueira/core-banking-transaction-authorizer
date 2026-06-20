@@ -43,7 +43,8 @@ processamento de negócio executa em uma transação ACID:
 
 1. Valida moeda (`BRL`) e valor positivo.
 2. Adquire locks temporários no Redis, sempre na ordem `transactionId` →
-   `accountId`, aguardando até `app.redis-lock.wait-timeout`.
+   `accountId`, aguardando até `app.redis-lock.wait-timeout` com backoff
+   exponencial e full jitter.
 3. Carrega a conta **com lock pessimista de escrita** (`SELECT … FOR UPDATE`).
    - não encontrada → `404`; status diferente de `ENABLED` → `FAILED (ACCOUNT_DISABLED)`.
 4. Idempotência: busca a transação pelo `transactionId` (PK).

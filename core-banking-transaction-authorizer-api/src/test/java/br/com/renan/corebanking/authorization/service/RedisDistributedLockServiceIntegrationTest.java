@@ -70,7 +70,8 @@ class RedisDistributedLockServiceIntegrationTest {
         String key = "lock:account:" + System.nanoTime();
 
         String result = service.executeWithLock(key,
-                Duration.ofSeconds(30), Duration.ofSeconds(1), Duration.ofMillis(20), () -> "ok");
+                Duration.ofSeconds(30), Duration.ofSeconds(1), Duration.ofMillis(20),
+                Duration.ofMillis(100), () -> "ok");
 
         assertThat(result).isEqualTo("ok");
         assertThat(service.tryLock(key, "owner-after", Duration.ofSeconds(30))).isTrue();

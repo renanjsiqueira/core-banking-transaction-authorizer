@@ -236,7 +236,7 @@ coordenação distribuída entre múltiplas instâncias. Localmente isso roda co
 Redis no Docker Compose; em produção, a proposta cloud usa **Amazon ElastiCache
 for Valkey**.
 
-A API utiliza locks temporários por `transactionId` e por `accountId` para reduzir processamento simultâneo duplicado e contenção no banco. Quando uma requisição encontra o lock ocupado, ela aguarda e tenta novamente internamente até `app.redis-lock.wait-timeout`, com intervalo `app.redis-lock.retry-delay`.
+A API utiliza locks temporários por `transactionId` e por `accountId` para reduzir processamento simultâneo duplicado e contenção no banco. Quando uma requisição encontra o lock ocupado, ela aguarda e tenta novamente internamente até `app.redis-lock.wait-timeout`, usando backoff exponencial com full jitter a partir de `app.redis-lock.retry-delay` e limitado por `app.redis-lock.max-retry-delay`.
 
 A consistência final do saldo continua sendo responsabilidade do PostgreSQL, por meio de transação ACID, chave única em `transactions.id` e lock pessimista na conta. Redis/Valkey não armazena saldo e não é fonte da verdade.
 
@@ -277,13 +277,12 @@ Implementado neste case:
 
 - Idempotência por `transactionId`, com replay seguro e conflito para payload divergente.
 - Lock pessimista no PostgreSQL como garantia final de consistência.
-- Lock distribuído Redis-compatible/Valkey por `transactionId` e `accountId`, com espera interna configurável.
+- Lock distribuído Redis-compatible/Valkey por `transactionId` e `accountId`, com espera interna configurável, backoff exponencial e full jitter.
 - Processamento SQS at-least-once: mensagem só é deletada após sucesso e importação é idempotente por `accountId`.
 - Health checks, shutdown graceful, Actuator/Prometheus, métricas de negócio da API, correlation ID/MDC, Dockerfiles e `docker-compose` completo para execução local.
 
 Assumidamente deixado como evolução por risco/tempo:
 
-- Backoff exponencial com full jitter no lock Redis-compatible.
 - Circuit breaker/fallback explícito para indisponibilidade do Redis-compatible/Valkey.
 - DLQ local no LocalStack; em cloud a proposta já prevê SQS com DLQ e redrive policy.
 - Tracing distribuído com OpenTelemetry.

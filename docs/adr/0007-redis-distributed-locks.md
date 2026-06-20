@@ -27,8 +27,8 @@ proposta de produção:
 Os locks usam `SET key value NX PX ttl` para aquisição e um **Lua script** para
 liberação segura (só remove a chave se o *owner* conferir). A ordem de aquisição
 é **sempre** `transactionId` → `accountId`, nunca invertida, evitando deadlock
-lógico. Se o lock estiver ocupado, a requisição aguarda e tenta novamente por um
-tempo configurável antes de falhar.
+lógico. Se o lock estiver ocupado, a requisição aguarda e tenta novamente com
+backoff exponencial e full jitter por um tempo configurável antes de falhar.
 
 ## Motivadores
 
@@ -66,7 +66,7 @@ correção.
 | Indisponibilidade do Redis-compatible/Valkey | `app.redis-lock.enabled=false` desativa a camada; o banco continua garantindo a correção. (Evolução: circuit breaker / *fail-open*) |
 | Falsa contenção (unlock indevido) | Unlock seguro via Lua com verificação de *owner* (`instanceId:uuid`); nunca remove lock de outro pod/request |
 | Deadlock lógico | Ordem fixa de aquisição: `transactionId` → `accountId` |
-| Lock ocupado por mais tempo que o limite configurado | A requisição falha sem persistir a transação; o cliente pode repetir o mesmo `transactionId` com segurança |
+| Lock ocupado por mais tempo que o limite configurado | Retry com backoff exponencial + full jitter até o timeout; se o lock seguir ocupado, a requisição falha sem persistir a transação e o cliente pode repetir o mesmo `transactionId` com segurança |
 | Observabilidade | Logs nos caminhos de lock/recusa; métricas via Micrometer/Actuator |
 
 ## Alternativas consideradas

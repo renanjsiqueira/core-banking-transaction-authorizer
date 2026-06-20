@@ -70,8 +70,10 @@ public class TransactionAuthorizationServiceImpl implements TransactionAuthoriza
 
         return lockService.executeWithLock(transactionKey, lockProperties.getTransactionLockTtl(),
                 lockProperties.getWaitTimeout(), lockProperties.getRetryDelay(),
+                lockProperties.getMaxRetryDelay(),
                 () -> lockService.executeWithLock(accountKey, lockProperties.getAccountLockTtl(),
                         lockProperties.getWaitTimeout(), lockProperties.getRetryDelay(),
+                        lockProperties.getMaxRetryDelay(),
                         () -> authorizeInTransaction(transactionId, request, amount)));
     }
 

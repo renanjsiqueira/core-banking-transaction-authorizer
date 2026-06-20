@@ -32,12 +32,12 @@ Objetivo: tornar o comportamento financeiro e operacional visível em produção
 Objetivo: evoluir retries simples para padrões mais robustos e documentar
 decisões de fail-open/fail-closed.
 
-| Item | Motivador | Critério de aceite |
-|---|---|---|
-| Backoff com full jitter no lock Redis-compatible | Evita sincronização de threads competindo pela mesma conta | Retry do lock usa delay crescente com jitter e mantém timeout total configurável |
-| Circuit breaker para Redis-compatible/Valkey | Redis-compatible/Valkey é camada auxiliar; indisponibilidade não deve derrubar o banco de verdade sem decisão explícita | Circuit breaker documenta e implementa política escolhida: fail-open para seguir só com Postgres ou fail-closed para proteger latência |
-| Timeouts explícitos em integrações | Falhas lentas são piores que falhas rápidas em alta volumetria | Valkey/SQS/Postgres têm timeouts documentados e configuráveis por ambiente |
-| DLQ local no LocalStack | Produção prevê DLQ, mas o ambiente local ainda não simula poison messages | `docker-compose` cria fila principal + DLQ + redrive policy; README mostra como inspecionar a DLQ |
+| Status | Item | Motivador | Critério de aceite |
+|---|---|---|---|
+| Concluido | Backoff com full jitter no lock Redis-compatible | Evita sincronização de threads competindo pela mesma conta | Retry do lock usa delay crescente com jitter e mantém timeout total configurável |
+| Pendente | Circuit breaker para Redis-compatible/Valkey | Redis-compatible/Valkey é camada auxiliar; indisponibilidade não deve derrubar o banco de verdade sem decisão explícita | Circuit breaker documenta e implementa política escolhida: fail-open para seguir só com Postgres ou fail-closed para proteger latência |
+| Pendente | Timeouts explícitos em integrações | Falhas lentas são piores que falhas rápidas em alta volumetria | Valkey/SQS/Postgres têm timeouts documentados e configuráveis por ambiente |
+| Pendente | DLQ local no LocalStack | Produção prevê DLQ, mas o ambiente local ainda não simula poison messages | `docker-compose` cria fila principal + DLQ + redrive policy; README mostra como inspecionar a DLQ |
 
 ## Fase 3 — Testes e corner cases adicionais
 

@@ -16,4 +16,5 @@ public class RedisLockProperties {
     private Duration transactionLockTtl = Duration.ofSeconds(30);
     private Duration waitTimeout = Duration.ofSeconds(2);
     private Duration retryDelay = Duration.ofMillis(50);
+    private Duration maxRetryDelay = Duration.ofMillis(250);
 }

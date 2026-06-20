@@ -64,7 +64,8 @@ class RedisDistributedLockServiceTest {
         when(valueOperations.setIfAbsent(anyString(), anyString(), any(Duration.class))).thenReturn(true);
 
         String result = service.executeWithLock("lock:account:1",
-                Duration.ofSeconds(30), Duration.ofSeconds(1), Duration.ofMillis(10), () -> "done");
+                Duration.ofSeconds(30), Duration.ofSeconds(1), Duration.ofMillis(10),
+                Duration.ofMillis(100), () -> "done");
 
         assertThat(result).isEqualTo("done");
         verify(redisTemplate).execute(any(RedisScript.class), anyList(), any());
@@ -76,8 +77,40 @@ class RedisDistributedLockServiceTest {
         when(valueOperations.setIfAbsent(anyString(), anyString(), any(Duration.class))).thenReturn(false);
 
         assertThatThrownBy(() -> service.executeWithLock("lock:account:1",
-                Duration.ofSeconds(30), Duration.ofMillis(100), Duration.ofMillis(10), () -> "done"))
+                Duration.ofSeconds(30), Duration.ofMillis(100), Duration.ofMillis(10),
+                Duration.ofMillis(100), () -> "done"))
                 .isInstanceOf(ResourceLockedException.class);
         verify(metrics).recordLockTimeout(eq("lock:account:1"), any(Duration.class));
+    }
+
+    @Test
+    void calculateBackoffCapGrowsExponentiallyUntilConfiguredMaximum() {
+        Duration retryDelay = Duration.ofMillis(50);
+        Duration maxRetryDelay = Duration.ofMillis(250);
+
+        assertThat(RedisDistributedLockService.calculateBackoffCap(retryDelay, maxRetryDelay, 0))
+                .isEqualTo(Duration.ofMillis(50));
+        assertThat(RedisDistributedLockService.calculateBackoffCap(retryDelay, maxRetryDelay, 1))
+                .isEqualTo(Duration.ofMillis(100));
+        assertThat(RedisDistributedLockService.calculateBackoffCap(retryDelay, maxRetryDelay, 2))
+                .isEqualTo(Duration.ofMillis(200));
+        assertThat(RedisDistributedLockService.calculateBackoffCap(retryDelay, maxRetryDelay, 3))
+                .isEqualTo(Duration.ofMillis(250));
+        assertThat(RedisDistributedLockService.calculateBackoffCap(retryDelay, maxRetryDelay, 10))
+                .isEqualTo(Duration.ofMillis(250));
+    }
+
+    @Test
+    void calculateFullJitterDelayStaysInsideBackoffCap() {
+        Duration retryDelay = Duration.ofMillis(50);
+        Duration maxRetryDelay = Duration.ofMillis(250);
+        Duration cap = RedisDistributedLockService.calculateBackoffCap(retryDelay, maxRetryDelay, 3);
+
+        for (int i = 0; i < 20; i++) {
+            Duration delay = RedisDistributedLockService.calculateFullJitterDelay(retryDelay, maxRetryDelay, 3);
+
+            assertThat(delay).isGreaterThanOrEqualTo(Duration.ZERO);
+            assertThat(delay).isLessThanOrEqualTo(cap);
+        }
     }
 }
