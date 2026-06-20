@@ -19,6 +19,12 @@ Documentação adicional: [arquitetura](docs/architecture.md) ·
 [deploy em cloud](docs/cloud-deployment.md) · [pipeline CI/CD](docs/pipeline.md) ·
 [backlog production readiness](docs/production-readiness-backlog.md).
 
+## Diagrama de deploy em cloud
+
+![Diagrama de deploy em cloud AWS com EKS](docs/cloud-deployment.png)
+
+Arquivo editável para apresentação: [docs/cloud-deployment.drawio](docs/cloud-deployment.drawio).
+
 ## Estrutura
 
 ```
