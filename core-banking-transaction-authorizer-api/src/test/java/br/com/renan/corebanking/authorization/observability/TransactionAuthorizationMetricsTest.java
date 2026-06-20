@@ -54,4 +54,26 @@ class TransactionAuthorizationMetricsTest {
                 .timer()
                 .count()).isEqualTo(1);
     }
+
+    @Test
+    void recordsCircuitBreakerAndBypassSignals() {
+        metrics.recordLockInfrastructureFailure("lock:transaction:" + UUID.randomUUID(), "acquire");
+        metrics.recordLockCircuitOpened("acquire");
+        metrics.recordLockBypassed("lock:transaction:" + UUID.randomUUID(), "circuit_open");
+
+        assertThat(meterRegistry.get("transactions.locks.infrastructure_failures.total")
+                .tag("lock_type", "transaction")
+                .tag("operation", "acquire")
+                .counter()
+                .count()).isEqualTo(1.0);
+        assertThat(meterRegistry.get("transactions.locks.circuit.opened.total")
+                .tag("operation", "acquire")
+                .counter()
+                .count()).isEqualTo(1.0);
+        assertThat(meterRegistry.get("transactions.locks.bypassed.total")
+                .tag("lock_type", "transaction")
+                .tag("reason", "circuit_open")
+                .counter()
+                .count()).isEqualTo(1.0);
+    }
 }

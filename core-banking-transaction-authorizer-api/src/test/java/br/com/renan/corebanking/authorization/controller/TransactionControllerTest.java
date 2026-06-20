@@ -27,6 +27,7 @@ import br.com.renan.corebanking.authorization.dto.response.TransactionPayloadDTO
 import br.com.renan.corebanking.authorization.dto.request.TransactionRequestDTO;
 import br.com.renan.corebanking.authorization.dto.response.TransactionResponseDTO;
 import br.com.renan.corebanking.authorization.exception.AccountNotFoundException;
+import br.com.renan.corebanking.authorization.exception.LockUnavailableException;
 import br.com.renan.corebanking.authorization.exception.TransactionConflictException;
 import br.com.renan.corebanking.authorization.service.TransactionAuthorizationService;
 import br.com.renan.corebanking.authorization.web.CorrelationIdFilter;
@@ -191,5 +192,16 @@ class TransactionControllerTest {
         mockMvc.perform(post("/transactions/{transactionId}", TX_ID)
                         .contentType(MediaType.APPLICATION_JSON).content(validBody()))
                 .andExpect(status().isConflict());
+    }
+
+    @Test
+    void lockUnavailableReturns503() throws Exception {
+        when(authorizationService.authorize(any(UUID.class), any(TransactionRequestDTO.class)))
+                .thenThrow(new LockUnavailableException("lock unavailable", null));
+
+        mockMvc.perform(post("/transactions/{transactionId}", TX_ID)
+                        .contentType(MediaType.APPLICATION_JSON).content(validBody()))
+                .andExpect(status().isServiceUnavailable())
+                .andExpect(jsonPath("$.title").value("Lock unavailable"));
     }
 }

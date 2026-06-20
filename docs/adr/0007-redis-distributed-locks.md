@@ -30,6 +30,13 @@ liberação segura (só remove a chave se o *owner* conferir). A ordem de aquisi
 lógico. Se o lock estiver ocupado, a requisição aguarda e tenta novamente com
 backoff exponencial e full jitter por um tempo configurável antes de falhar.
 
+Para indisponibilidade do Redis-compatible/Valkey, a política padrão é
+**fail-open com circuit breaker**: após falhas consecutivas, a aplicação deixa de
+tentar locks distribuídos por uma janela configurável e segue apenas com a
+garantia do PostgreSQL. A política pode ser alterada para **fail-closed** via
+`app.redis-lock.circuit-breaker.fallback=FAIL_CLOSED`, retornando `503` quando a
+camada de lock estiver indisponível.
+
 ## Motivadores
 
 - Menos contenção na linha da conta no PostgreSQL sob carga.
@@ -63,11 +70,11 @@ correção.
 | Risco | Mitigação |
 |---|---|
 | Lock expirar antes do fim do processamento | TTL curto + o lock pessimista do PostgreSQL garante a consistência mesmo se o lock Redis-compatible expirar |
-| Indisponibilidade do Redis-compatible/Valkey | `app.redis-lock.enabled=false` desativa a camada; o banco continua garantindo a correção. (Evolução: circuit breaker / *fail-open*) |
+| Indisponibilidade do Redis-compatible/Valkey | Circuit breaker com `fail-open` padrão bypassa temporariamente a camada auxiliar; o banco continua garantindo a correção. `FAIL_CLOSED` é configurável para recusar com `503` se a operação preferir proteger latência |
 | Falsa contenção (unlock indevido) | Unlock seguro via Lua com verificação de *owner* (`instanceId:uuid`); nunca remove lock de outro pod/request |
 | Deadlock lógico | Ordem fixa de aquisição: `transactionId` → `accountId` |
 | Lock ocupado por mais tempo que o limite configurado | Retry com backoff exponencial + full jitter até o timeout; se o lock seguir ocupado, a requisição falha sem persistir a transação e o cliente pode repetir o mesmo `transactionId` com segurança |
-| Observabilidade | Logs nos caminhos de lock/recusa; métricas via Micrometer/Actuator |
+| Observabilidade | Logs nos caminhos de lock/recusa/fallback; métricas via Micrometer/Actuator para locks, timeouts, falhas de infraestrutura, circuit breaker aberto e bypass |
 
 ## Alternativas consideradas
 
@@ -81,6 +88,5 @@ correção.
 
 ## Evolução futura
 
-- *Fail-open* explícito com circuit breaker quando o Redis-compatible/Valkey estiver indisponível.
 - Possível uso de lock por `accountId` no listener caso a importação evolua para
   além de um simples upsert idempotente por PK.

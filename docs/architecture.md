@@ -57,6 +57,11 @@ processamento de negócio executa em uma transação ACID:
 A concorrência na mesma conta é serializada pelo lock de linha; contas diferentes
 seguem em paralelo.
 
+Se Redis-compatible/Valkey ficar indisponível, o circuit breaker usa `fail-open`
+por padrão: bypassa temporariamente o lock distribuído e mantém a consistência
+no PostgreSQL. `FAIL_CLOSED` é configurável para retornar `503` quando a operação
+preferir recusar em vez de seguir apenas com o banco.
+
 ## Fluxo de contas criadas (Listener)
 
 Um poller `@Scheduled` faz long polling no SQS (lote de 10), parseia cada

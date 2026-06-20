@@ -41,6 +41,11 @@ app:
     wait-timeout: 2s
     retry-delay: 50ms
     max-retry-delay: 250ms
+    circuit-breaker:
+      enabled: ${REDIS_LOCK_CIRCUIT_BREAKER_ENABLED:true}
+      failure-threshold: ${REDIS_LOCK_CIRCUIT_BREAKER_FAILURE_THRESHOLD:3}
+      open-duration: ${REDIS_LOCK_CIRCUIT_BREAKER_OPEN_DURATION:30s}
+      fallback: ${REDIS_LOCK_CIRCUIT_BREAKER_FALLBACK:FAIL_OPEN}
 
 management:
   endpoints:

@@ -67,6 +67,26 @@ public class TransactionAuthorizationMetrics {
                 .record(waitTime);
     }
 
+    public void recordLockInfrastructureFailure(String key, String operation) {
+        meterRegistry.counter("transactions.locks.infrastructure_failures.total",
+                        "lock_type", lockType(key),
+                        "operation", operation)
+                .increment();
+    }
+
+    public void recordLockCircuitOpened(String operation) {
+        meterRegistry.counter("transactions.locks.circuit.opened.total",
+                        "operation", operation)
+                .increment();
+    }
+
+    public void recordLockBypassed(String key, String reason) {
+        meterRegistry.counter("transactions.locks.bypassed.total",
+                        "lock_type", lockType(key),
+                        "reason", reason)
+                .increment();
+    }
+
     private static String failureReason(Transaction transaction) {
         return transaction.getFailureReason() == null ? NONE : transaction.getFailureReason().name();
     }

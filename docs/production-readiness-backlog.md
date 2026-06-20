@@ -35,7 +35,7 @@ decisões de fail-open/fail-closed.
 | Status | Item | Motivador | Critério de aceite |
 |---|---|---|---|
 | Concluido | Backoff com full jitter no lock Redis-compatible | Evita sincronização de threads competindo pela mesma conta | Retry do lock usa delay crescente com jitter e mantém timeout total configurável |
-| Pendente | Circuit breaker para Redis-compatible/Valkey | Redis-compatible/Valkey é camada auxiliar; indisponibilidade não deve derrubar o banco de verdade sem decisão explícita | Circuit breaker documenta e implementa política escolhida: fail-open para seguir só com Postgres ou fail-closed para proteger latência |
+| Concluido | Circuit breaker para Redis-compatible/Valkey | Redis-compatible/Valkey é camada auxiliar; indisponibilidade não deve derrubar o banco de verdade sem decisão explícita | Circuit breaker documenta e implementa política escolhida: fail-open para seguir só com Postgres ou fail-closed para proteger latência |
 | Pendente | Timeouts explícitos em integrações | Falhas lentas são piores que falhas rápidas em alta volumetria | Valkey/SQS/Postgres têm timeouts documentados e configuráveis por ambiente |
 | Pendente | DLQ local no LocalStack | Produção prevê DLQ, mas o ambiente local ainda não simula poison messages | `docker-compose` cria fila principal + DLQ + redrive policy; README mostra como inspecionar a DLQ |
 
@@ -44,12 +44,12 @@ decisões de fail-open/fail-closed.
 Objetivo: aumentar confiança nos pontos de maior risco: concorrência, lock,
 idempotência e falhas transitórias.
 
-| Item | Motivador | Critério de aceite |
-|---|---|---|
-| Teste de timeout do lock por conta | Garante que uma request concorrente não persiste transação ao estourar espera | Teste valida `ResourceLockedException`, ausência de escrita e retry seguro com mesmo `transactionId` |
-| Teste de Redis indisponível | Define comportamento real do sistema quando a camada auxiliar cai | Teste cobre a política do circuit breaker/fallback |
-| Testes de DLQ / mensagem inválida | Poison messages não devem travar drenagem da fila | Testes validam retry pelo SQS e envio para DLQ após limite configurado |
-| Teste de contrato da coleção | Evita coleção desatualizada | Smoke test ou script valida os requests principais contra app local |
+| Status | Item | Motivador | Critério de aceite |
+|---|---|---|---|
+| Pendente | Teste de timeout do lock por conta | Garante que uma request concorrente não persiste transação ao estourar espera | Teste valida `ResourceLockedException`, ausência de escrita e retry seguro com mesmo `transactionId` |
+| Concluido | Teste de Redis indisponível | Define comportamento real do sistema quando a camada auxiliar cai | Teste cobre a política do circuit breaker/fallback |
+| Pendente | Testes de DLQ / mensagem inválida | Poison messages não devem travar drenagem da fila | Testes validam retry pelo SQS e envio para DLQ após limite configurado |
+| Pendente | Teste de contrato da coleção | Evita coleção desatualizada | Smoke test ou script valida os requests principais contra app local |
 
 ## Fase 4 — Hardening de container e segurança
 

@@ -75,6 +75,14 @@ public class ApiExceptionHandler {
         return problem;
     }
 
+    @ExceptionHandler(LockUnavailableException.class)
+    public ProblemDetail handleLockUnavailable(LockUnavailableException ex) {
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.SERVICE_UNAVAILABLE,
+                "Distributed lock service is unavailable.");
+        problem.setTitle("Lock unavailable");
+        return problem;
+    }
+
     @ExceptionHandler(Exception.class)
     public ProblemDetail handleUnexpected(Exception ex) {
         log.error("Unexpected error handling request", ex);

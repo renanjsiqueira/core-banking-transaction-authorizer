@@ -238,6 +238,8 @@ for Valkey**.
 
 A API utiliza locks temporários por `transactionId` e por `accountId` para reduzir processamento simultâneo duplicado e contenção no banco. Quando uma requisição encontra o lock ocupado, ela aguarda e tenta novamente internamente até `app.redis-lock.wait-timeout`, usando backoff exponencial com full jitter a partir de `app.redis-lock.retry-delay` e limitado por `app.redis-lock.max-retry-delay`.
 
+Como Redis/Valkey é camada auxiliar, a política padrão para indisponibilidade é `fail-open`: o circuit breaker abre após falhas consecutivas, bypassa temporariamente o lock distribuído e deixa o PostgreSQL seguir como garantia final de consistência. Para ambientes que prefiram proteger latência e recusar autorização enquanto Redis/Valkey estiver indisponível, `app.redis-lock.circuit-breaker.fallback=FAIL_CLOSED` retorna `503`.
+
 A consistência final do saldo continua sendo responsabilidade do PostgreSQL, por meio de transação ACID, chave única em `transactions.id` e lock pessimista na conta. Redis/Valkey não armazena saldo e não é fonte da verdade.
 
 Se o lock não for adquirido dentro do timeout configurado, a requisição é recusada sem persistir a transação. O cliente pode repetir o mesmo `transactionId`; a idempotência garante que uma transação já processada não seja aplicada duas vezes.
@@ -266,7 +268,10 @@ Micrometer. A API propaga/retorna `X-Correlation-Id` e inclui `correlationId` e
 `transactions.authorizations.total`, `transactions.idempotency.replays.total`,
 `transactions.idempotency.conflicts.total`, `transactions.accounts.not_found.total`,
 `transactions.locks.acquired.total`, `transactions.locks.timeouts.total` e
-`transactions.locks.wait.duration`. O listener publica
+`transactions.locks.wait.duration`, além dos sinais de resiliência
+`transactions.locks.infrastructure_failures.total`,
+`transactions.locks.circuit.opened.total` e
+`transactions.locks.bypassed.total`. O listener publica
 `accounts.imported.total`, `accounts.duplicates.total`,
 `sqs.account-created.messages.processed.total`,
 `sqs.account-created.messages.failed.total`.
@@ -278,12 +283,12 @@ Implementado neste case:
 - Idempotência por `transactionId`, com replay seguro e conflito para payload divergente.
 - Lock pessimista no PostgreSQL como garantia final de consistência.
 - Lock distribuído Redis-compatible/Valkey por `transactionId` e `accountId`, com espera interna configurável, backoff exponencial e full jitter.
+- Circuit breaker para Redis-compatible/Valkey com `fail-open` padrão e `fail-closed` configurável.
 - Processamento SQS at-least-once: mensagem só é deletada após sucesso e importação é idempotente por `accountId`.
 - Health checks, shutdown graceful, Actuator/Prometheus, métricas de negócio da API, correlation ID/MDC, Dockerfiles e `docker-compose` completo para execução local.
 
 Assumidamente deixado como evolução por risco/tempo:
 
-- Circuit breaker/fallback explícito para indisponibilidade do Redis-compatible/Valkey.
 - DLQ local no LocalStack; em cloud a proposta já prevê SQS com DLQ e redrive policy.
 - Tracing distribuído com OpenTelemetry.
 - Teste de carga automatizado (`k6` ou Gatling) e guia formal de capacidade.
