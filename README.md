@@ -229,17 +229,20 @@ falha e convenções de dinheiro. Ele não contém entidades JPA, DTOs REST/SQS,
 repositories, configurações Spring ou regras de caso de uso, evitando que vire
 um `commons` genérico e acople os serviços por implementação.
 
-### Redis: distributed locks
+### Redis-compatible/Valkey: distributed locks
 
-Redis é utilizado como camada auxiliar para coordenação distribuída entre múltiplas instâncias da aplicação.
+A aplicação usa protocolo/cliente Redis-compatible como camada auxiliar para
+coordenação distribuída entre múltiplas instâncias. Localmente isso roda com
+Redis no Docker Compose; em produção, a proposta cloud usa **Amazon ElastiCache
+for Valkey**.
 
 A API utiliza locks temporários por `transactionId` e por `accountId` para reduzir processamento simultâneo duplicado e contenção no banco. Quando uma requisição encontra o lock ocupado, ela aguarda e tenta novamente internamente até `app.redis-lock.wait-timeout`, com intervalo `app.redis-lock.retry-delay`.
 
-A consistência final do saldo continua sendo responsabilidade do PostgreSQL, por meio de transação ACID, chave única em `transactions.id` e lock pessimista na conta. Redis não armazena saldo e não é fonte da verdade.
+A consistência final do saldo continua sendo responsabilidade do PostgreSQL, por meio de transação ACID, chave única em `transactions.id` e lock pessimista na conta. Redis/Valkey não armazena saldo e não é fonte da verdade.
 
 Se o lock não for adquirido dentro do timeout configurado, a requisição é recusada sem persistir a transação. O cliente pode repetir o mesmo `transactionId`; a idempotência garante que uma transação já processada não seja aplicada duas vezes.
 
-Os locks são adquiridos sempre na ordem `transactionId` → `accountId` (nunca invertida, para evitar deadlock lógico), com unlock seguro por *owner* (Lua script). No `core-banking-account-created-listener` o Redis não é usado: a idempotência da importação já é garantida pela primary key `accounts.id` (Redis é mais crítico na API de autorização). Detalhes e trade-offs em [docs/adr/0007-redis-distributed-locks.md](docs/adr/0007-redis-distributed-locks.md).
+Os locks são adquiridos sempre na ordem `transactionId` → `accountId` (nunca invertida, para evitar deadlock lógico), com unlock seguro por *owner* (Lua script). No `core-banking-account-created-listener` o lock distribuído não é usado: a idempotência da importação já é garantida pela primary key `accounts.id` (a coordenação distribuída é mais crítica na API de autorização). Detalhes e trade-offs em [docs/adr/0007-redis-distributed-locks.md](docs/adr/0007-redis-distributed-locks.md).
 
 ## Importação de contas via SQS
 
@@ -258,8 +261,14 @@ serviços (ver [docs/pipeline.md](docs/pipeline.md)).
 ## Observabilidade
 
 Ambos expõem Actuator (`/actuator/health`, `/actuator/prometheus`) e métricas
-Micrometer. O listener publica `accounts.imported.total`,
-`accounts.duplicates.total`, `sqs.account-created.messages.processed.total`,
+Micrometer. A API propaga/retorna `X-Correlation-Id` e inclui `correlationId` e
+`transactionId` no MDC dos logs. A API publica métricas de negócio:
+`transactions.authorizations.total`, `transactions.idempotency.replays.total`,
+`transactions.idempotency.conflicts.total`, `transactions.accounts.not_found.total`,
+`transactions.locks.acquired.total`, `transactions.locks.timeouts.total` e
+`transactions.locks.wait.duration`. O listener publica
+`accounts.imported.total`, `accounts.duplicates.total`,
+`sqs.account-created.messages.processed.total`,
 `sqs.account-created.messages.failed.total`.
 
 ## Resiliência: implementado e backlog
@@ -268,17 +277,16 @@ Implementado neste case:
 
 - Idempotência por `transactionId`, com replay seguro e conflito para payload divergente.
 - Lock pessimista no PostgreSQL como garantia final de consistência.
-- Lock distribuído Redis por `transactionId` e `accountId`, com espera interna configurável.
+- Lock distribuído Redis-compatible/Valkey por `transactionId` e `accountId`, com espera interna configurável.
 - Processamento SQS at-least-once: mensagem só é deletada após sucesso e importação é idempotente por `accountId`.
-- Health checks, shutdown graceful, Actuator/Prometheus, Dockerfiles e `docker-compose` completo para execução local.
+- Health checks, shutdown graceful, Actuator/Prometheus, métricas de negócio da API, correlation ID/MDC, Dockerfiles e `docker-compose` completo para execução local.
 
 Assumidamente deixado como evolução por risco/tempo:
 
-- Backoff exponencial com full jitter no lock Redis.
-- Circuit breaker/fallback explícito para indisponibilidade do Redis.
+- Backoff exponencial com full jitter no lock Redis-compatible.
+- Circuit breaker/fallback explícito para indisponibilidade do Redis-compatible/Valkey.
 - DLQ local no LocalStack; em cloud a proposta já prevê SQS com DLQ e redrive policy.
-- Métricas customizadas da API por decisão de autorização, contenção de lock e timeout.
-- Correlation ID/MDC e tracing distribuído com OpenTelemetry.
+- Tracing distribuído com OpenTelemetry.
 - Teste de carga automatizado (`k6` ou Gatling) e guia formal de capacidade.
 
 Esses itens estão priorizados em [docs/production-readiness-backlog.md](docs/production-readiness-backlog.md).

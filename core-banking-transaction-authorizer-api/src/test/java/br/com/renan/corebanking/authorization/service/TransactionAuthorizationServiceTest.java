@@ -30,6 +30,7 @@ import br.com.renan.corebanking.authorization.exception.ResourceLockedException;
 import br.com.renan.corebanking.authorization.exception.TransactionConflictException;
 import br.com.renan.corebanking.authorization.exception.UnsupportedCurrencyException;
 import br.com.renan.corebanking.authorization.mapper.TransactionResponseMapper;
+import br.com.renan.corebanking.authorization.observability.TransactionAuthorizationMetrics;
 import br.com.renan.corebanking.authorization.repository.AccountRepository;
 import br.com.renan.corebanking.authorization.repository.TransactionRepository;
 import br.com.renan.corebanking.authorization.support.AccountTestFactory;
@@ -44,6 +45,7 @@ class TransactionAuthorizationServiceTest {
     private TransactionRepository transactionRepository;
     private RedisDistributedLockService lockService;
     private TransactionOperations transactionOperations;
+    private TransactionAuthorizationMetrics metrics;
     private TransactionAuthorizationServiceImpl service;
 
     @BeforeEach
@@ -52,9 +54,10 @@ class TransactionAuthorizationServiceTest {
         transactionRepository = mock(TransactionRepository.class);
         lockService = mock(RedisDistributedLockService.class);
         transactionOperations = mock(TransactionOperations.class);
+        metrics = mock(TransactionAuthorizationMetrics.class);
         service = new TransactionAuthorizationServiceImpl(
                 accountRepository, transactionRepository, new TransactionResponseMapper(),
-                lockService, new RedisLockProperties(), transactionOperations);
+                lockService, new RedisLockProperties(), transactionOperations, metrics);
 
         when(lockService.executeWithLock(any(), any(), any(), any(), any()))
                 .thenAnswer(invocation -> ((Supplier<?>) invocation.getArgument(4)).get());
@@ -90,6 +93,7 @@ class TransactionAuthorizationServiceTest {
         verify(lockService).executeWithLock(startsWith("lock:transaction:"), any(), any(), any(), any());
         verify(lockService).executeWithLock(startsWith("lock:account:"), any(), any(), any(), any());
         verify(accountRepository).findByIdForUpdate(account.getId());
+        verify(metrics).recordAuthorization(any(Transaction.class));
     }
 
     @Test
@@ -143,6 +147,7 @@ class TransactionAuthorizationServiceTest {
 
         assertThat(response.transaction().status()).isEqualTo(TransactionStatus.FAILED);
         verify(transactionRepository).save(any(Transaction.class));
+        verify(metrics).recordAuthorization(any(Transaction.class));
     }
 
     @Test
@@ -164,6 +169,7 @@ class TransactionAuthorizationServiceTest {
         assertThatThrownBy(() -> service.authorize(
                 UUID.randomUUID(), TransactionRequestTestFactory.credit(accountId, "10.00")))
                 .isInstanceOf(AccountNotFoundException.class);
+        verify(metrics).recordAccountNotFound(TransactionType.CREDIT);
     }
 
     @Test
@@ -177,6 +183,7 @@ class TransactionAuthorizationServiceTest {
         assertThat(response.transaction().status()).isEqualTo(TransactionStatus.FAILED);
         assertThat(account.getBalanceAmount()).isEqualByComparingTo("100.00");
         verify(accountRepository, never()).save(any(Account.class));
+        verify(metrics).recordAuthorization(any(Transaction.class));
     }
 
     @Test
@@ -222,6 +229,7 @@ class TransactionAuthorizationServiceTest {
         assertThat(response.account().balance().amount()).isEqualByComparingTo("150.00");
         verify(accountRepository, never()).save(any(Account.class));
         verify(transactionRepository, never()).save(any(Transaction.class));
+        verify(metrics).recordIdempotentReplay(stored);
     }
 
     @Test
@@ -235,5 +243,6 @@ class TransactionAuthorizationServiceTest {
         assertThatThrownBy(() -> service.authorize(
                 stored.getId(), TransactionRequestTestFactory.credit(account.getId(), "999.00")))
                 .isInstanceOf(TransactionConflictException.class);
+        verify(metrics).recordIdempotencyConflict(TransactionType.CREDIT);
     }
 }

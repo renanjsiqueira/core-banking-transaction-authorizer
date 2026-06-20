@@ -14,6 +14,9 @@ import org.testcontainers.utility.DockerImageName;
 import org.springframework.data.redis.connection.lettuce.LettuceConnectionFactory;
 import org.springframework.data.redis.core.StringRedisTemplate;
 
+import br.com.renan.corebanking.authorization.observability.TransactionAuthorizationMetrics;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
+
 @Testcontainers(disabledWithoutDocker = true)
 class RedisDistributedLockServiceIntegrationTest {
     @Container
@@ -30,7 +33,8 @@ class RedisDistributedLockServiceIntegrationTest {
         factory.afterPropertiesSet();
         StringRedisTemplate template = new StringRedisTemplate(factory);
         template.afterPropertiesSet();
-        service = new RedisDistributedLockService(template);
+        service = new RedisDistributedLockService(
+                template, new TransactionAuthorizationMetrics(new SimpleMeterRegistry()));
     }
 
     @Test

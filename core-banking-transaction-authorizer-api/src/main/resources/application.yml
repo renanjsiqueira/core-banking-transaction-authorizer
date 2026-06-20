@@ -66,5 +66,7 @@ server:
   shutdown: graceful
 
 logging:
+  pattern:
+    level: "%5p [correlationId:%X{correlationId:-},transactionId:%X{transactionId:-}]"
   level:
     br.com.renan.corebanking: ${LOG_LEVEL:INFO}

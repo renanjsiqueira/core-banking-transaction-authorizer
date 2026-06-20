@@ -1,79 +1,149 @@
-# Deploy em cloud (referência AWS)
+# Deploy em cloud AWS com EKS
 
-Topologia de referência para rodar os dois serviços em cloud pública AWS.
+Topologia proposta para executar o core banking em produção na AWS usando
+**Amazon EKS** como plataforma de containers.
 
-```
-                   ┌───────────────┐
-       clientes ──▶│ Amazon Route53│
-                   └───────┬───────┘
-                           ▼
-                  ┌──────────────────┐
-                  │  API Gateway /   │  TLS, throttling, autN/Z (WAF)
-                  │  Application LB   │
-                  └────────┬─────────┘
-                           ▼
-        ┌──────────────────────────────────────┐
-        │  EKS / ECS Fargate (subnets privadas) │
-        │                                       │
-        │  core-banking-transaction-             │  HPA por RPS/latência
-        │  authorizer-api                        │
-        │   (Deployment, N réplicas)            │
-        │                                       │
-        │  core-banking-account-created-listener │  escala por profundidade da fila
-        │   (Deployment, M réplicas)            │
-        └───────┬───────────────────┬───────────┘
-                │                   │
-        ┌───────▼────────┐   ┌──────▼─────────┐
-        │  Amazon RDS    │   │   Amazon SQS   │  conta-bancaria-criada
-        │  PostgreSQL    │   │   + DLQ        │
-        │  (Multi-AZ)    │   └────────────────┘
-        └────────────────┘
-```
+## Diagrama
 
-## Diagrama (Mermaid)
+Arquivo editavel para apresentacao: [cloud-deployment.drawio](cloud-deployment.drawio).
+
+Para apresentar e alterar durante a conversa:
+
+- **draw.io / diagrams.net:** abra `docs/cloud-deployment.drawio` em
+  `File > Open from > Device`. As caixas e conectores ficam editaveis.
+- **Miro:** importe uma exportacao do draw.io em SVG/PDF/PNG para apresentacao
+  visual. Para edicao plena dentro do Miro, recrie a partir dos elementos nativos
+  do Miro ou use o Mermaid como base, pois importacoes visuais podem virar imagem
+  ou grupos pouco editaveis.
 
 ```mermaid
-flowchart LR
-    Client[Clientes] --> APIGW[API Gateway]
-    APIGW --> ALB[Application Load Balancer]
-    ALB --> API[core-banking-transaction-authorizer-api Pods]
+flowchart TB
+    clients["Clientes / parceiros"] --> r53["Amazon Route 53"]
+    r53 --> waf["AWS WAF"]
+    waf --> apigw["Amazon API Gateway<br/>TLS, auth, throttling"]
+    apigw --> vpclink["VPC Link"]
 
-    API --> Redis[(ElastiCache Redis)]
-    API --> Aurora[(Aurora PostgreSQL)]
+    producer["Servico de contas / onboarding"] --> sqs
 
-    SQS[SQS conta-bancaria-criada] --> Listener[core-banking-account-created-listener Pods]
-    Listener --> Aurora
+    cicd["Pipeline CI/CD"] --> ecr["Amazon ECR<br/>imagens por servico"]
+    cicd --> flyway
+    cicd --> eks
+
+    subgraph aws["AWS Account / Region"]
+        sqs["Amazon SQS<br/>conta-bancaria-criada<br/>+ DLQ"]
+        secrets["Secrets Manager / SSM<br/>segredos e configuracoes"]
+        cw["CloudWatch Logs / Metrics"]
+        amp["Amazon Managed Prometheus"]
+        grafana["Amazon Managed Grafana"]
+
+        subgraph vpc["VPC multi-AZ"]
+            subgraph public_subnets["Public subnets"]
+                nat["NAT Gateways<br/>ou egress controlado"]
+            end
+
+            subgraph private_app_subnets["Private app subnets"]
+                alb["Internal Application Load Balancer<br/>AWS Load Balancer Controller"]
+                eks["Amazon EKS<br/>Managed Node Groups + Karpenter"]
+                ingress["Kubernetes Ingress / Services"]
+                api["Deployment<br/>core-banking-transaction-authorizer-api<br/>HPA por CPU, RPS e latencia"]
+                listener["Deployment<br/>core-banking-account-created-listener<br/>KEDA/HPA por backlog SQS"]
+                flyway["Kubernetes Job<br/>Flyway migrations"]
+            end
+
+            subgraph private_data_subnets["Private data subnets"]
+                proxy["Amazon RDS Proxy"]
+                aurora[("Amazon Aurora PostgreSQL<br/>Multi-AZ cluster<br/>writer + readers<br/>accounts / transactions")]
+                valkey[("Amazon ElastiCache for Valkey<br/>Multi-AZ<br/>locks por accountId / transactionId")]
+            end
+
+            endpoints["VPC Endpoints<br/>SQS, ECR, CloudWatch, Secrets Manager"]
+        end
+    end
+
+    vpclink --> alb
+    alb --> ingress
+    ingress --> api
+
+    ecr --> eks
+    secrets --> api
+    secrets --> listener
+    secrets --> flyway
+
+    api --> valkey
+    api --> proxy
+    listener --> proxy
+    flyway --> proxy
+    proxy --> aurora
+
+    sqs --> listener
+    listener --> sqs
+
+    api --> cw
+    listener --> cw
+    api --> amp
+    listener --> amp
+    amp --> grafana
+    eks --> endpoints
 ```
 
-## Componentes
+## Leitura da arquitetura
 
-- **Borda:** Route 53 + API Gateway (ou ALB) com WAF e terminação TLS. Throttling
-  técnico contra abuso pode existir na borda, mas não substitui a serialização
-  por conta no fluxo de autorização. O listener não é exposto à internet.
-- **Compute:** containers em **EKS** (ou **ECS Fargate**). Cada serviço é um
-  Deployment/Service independente com seu próprio autoscaling:
-  - API → Horizontal Pod Autoscaler por CPU + RPS/latência.
-  - Listener → escala por **`ApproximateNumberOfMessagesVisible` do SQS**
-    (KEDA / app autoscaling); muitas vezes 0..N conforme o backlog.
-- **Banco:** **Amazon RDS for PostgreSQL**, Multi-AZ, com read replicas se a
-  carga de leitura crescer. Apenas subnets privadas; acesso via security
-  groups/IAM.
-- **Mensageria:** **Amazon SQS** com **dead-letter queue** e redrive policy para
-  poison messages; visibility timeout ajustado ao tempo de processamento.
-- **Coordenação/cache:** **Amazon ElastiCache for Redis** — camada auxiliar da
-  API para lock distribuído (`transactionId`/`accountId`). Não armazena saldo
-  nem é fonte da verdade (ver
-  [ADR 0007](adr/0007-redis-distributed-locks.md)).
-- **Segredos/config:** AWS Secrets Manager / SSM Parameter Store, injetados como
-  variáveis de ambiente (12-factor). IAM roles for service accounts (IRSA) — sem
-  chaves estáticas.
-- **Observabilidade:** scrape Prometheus de `/actuator/prometheus` (ou agente
-  CloudWatch), logs centralizados (CloudWatch/OpenSearch), traces (OTel/X-Ray).
-- **Tipo de compute:** começar com Fargate/nós pequenos; a API é limitada por
-  CPU/latência e o listener por I/O — dimensionar de forma independente.
+- **Borda:** Route 53 direciona o dominio para o API Gateway. AWS WAF protege
+  contra trafego malicioso, enquanto o API Gateway concentra TLS, autenticacao,
+  autorizacao e throttling tecnico. O trafego entra na VPC por **VPC Link**.
+- **Entrada no cluster:** o **AWS Load Balancer Controller** provisiona um
+  Application Load Balancer interno para rotear chamadas ao Ingress da API. O
+  listener SQS nao e exposto externamente.
+- **Compute:** os servicos rodam em **EKS Managed Node Groups**, com **Karpenter**
+  para escalar capacidade de nos conforme demanda. Java/Spring em EC2 gerenciado
+  tende a ser mais previsivel para alta volumetria do que iniciar tudo em
+  compute sob demanda por requisicao.
+- **Servico sincrono:** `core-banking-transaction-authorizer-api` escala por HPA
+  usando CPU, latencia, RPS e metricas de erro. Usa Valkey para locks
+  temporarios e Aurora PostgreSQL como fonte da verdade transacional.
+- **Servico assincrono:** `core-banking-account-created-listener` consome a fila
+  `conta-bancaria-criada` e escala por backlog do SQS usando KEDA ou metricas
+  customizadas (`ApproximateNumberOfMessagesVisible`).
+- **Persistencia:** Amazon Aurora PostgreSQL-Compatible Multi-AZ guarda
+  `accounts` e `transactions`. O cluster possui instancia writer e readers para
+  crescimento de leitura. O RDS Proxy reduz risco de exaustao de conexoes quando
+  o numero de pods cresce.
+- **Mensageria:** Amazon SQS usa DLQ e redrive policy para mensagens venenosas.
+  O processamento segue at-least-once com idempotencia por `accountId`.
+- **Coordenacao:** Amazon ElastiCache for Valkey e usado apenas para locks
+  distribuidos de curta duracao. A aplicacao continua usando cliente/protocolo
+  Redis compativel; saldo e ledger continuam no Aurora PostgreSQL.
+- **Segredos e identidade:** Secrets Manager/SSM guardam credenciais e parametros.
+  Os pods acessam AWS usando **IRSA** (IAM Roles for Service Accounts), sem
+  chaves estaticas.
+- **Observabilidade:** logs vao para CloudWatch; metricas Actuator/Prometheus sao
+  coletadas no Amazon Managed Prometheus e visualizadas no Grafana. Traces podem
+  ser enviados via OpenTelemetry para X-Ray ou backend equivalente.
 
-## Migrations de schema
+## Alta disponibilidade e resiliencia
 
-O Flyway roda como um **job/step dedicado no pipeline antes do deploy** (não no
-startup da aplicação em produção), de forma que os rollouts (blue/green, canary)
-fiquem desacoplados das mudanças de schema. Ver [pipeline.md](pipeline.md).
+- EKS, Aurora, Valkey e pods distribuidos em pelo menos **3 AZs**.
+- Deployments com `readinessProbe`, `livenessProbe`, `PodDisruptionBudget`,
+  requests/limits e anti-affinity entre replicas criticas.
+- Aurora PostgreSQL Multi-AZ com backups, PITR, failover automatico e janela de
+  manutencao controlada.
+- Valkey Multi-AZ com failover automatico.
+- SQS com DLQ, visibility timeout maior que o tempo maximo de processamento e
+  redrive controlado.
+- VPC Endpoints reduzem dependencia de NAT para acessar SQS, ECR, CloudWatch e
+  Secrets Manager.
+
+## Deploy e migrations
+
+As imagens sao publicadas no **ECR** com tag imutavel baseada no git SHA. O
+pipeline executa testes, scans, build das imagens e depois roda um **Kubernetes
+Job de Flyway** antes do rollout dos servicos.
+
+O rollout recomendado e canary/blue-green:
+
+- API: canary progressivo por porcentagem de trafego, observando erro, latencia
+  p99 e metricas de negocio.
+- Listener: rolling update controlado, seguro por causa de idempotencia e
+  entrega at-least-once do SQS.
+- Banco: estrategia expand/contract para manter migrations retrocompativeis com
+  versoes antigas e novas da aplicacao.

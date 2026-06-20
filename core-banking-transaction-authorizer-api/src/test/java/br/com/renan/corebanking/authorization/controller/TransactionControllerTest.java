@@ -4,6 +4,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -15,6 +16,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
+import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 
@@ -27,10 +29,12 @@ import br.com.renan.corebanking.authorization.dto.response.TransactionResponseDT
 import br.com.renan.corebanking.authorization.exception.AccountNotFoundException;
 import br.com.renan.corebanking.authorization.exception.TransactionConflictException;
 import br.com.renan.corebanking.authorization.service.TransactionAuthorizationService;
+import br.com.renan.corebanking.authorization.web.CorrelationIdFilter;
 import br.com.renan.corebanking.domain.shared.enums.TransactionStatus;
 import br.com.renan.corebanking.domain.shared.enums.TransactionType;
 
 @WebMvcTest(TransactionController.class)
+@Import(CorrelationIdFilter.class)
 class TransactionControllerTest {
     private static final String TX_ID = "8e8ae808-b154-48b5-9f3e-553935cc4543";
     private static final String ACCOUNT_ID = "5b19c8b6-0cc4-4c72-a989-0c2ee15fa975";
@@ -64,9 +68,11 @@ class TransactionControllerTest {
                 .thenReturn(sampleResponse());
 
         mockMvc.perform(post("/transactions/{transactionId}", TX_ID)
+                        .header(CorrelationIdFilter.CORRELATION_ID_HEADER, "test-correlation-id")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(validBody()))
                 .andExpect(status().isOk())
+                .andExpect(header().string(CorrelationIdFilter.CORRELATION_ID_HEADER, "test-correlation-id"))
                 .andExpect(jsonPath("$.transaction.id").value(TX_ID))
                 .andExpect(jsonPath("$.transaction.type").value("CREDIT"))
                 .andExpect(jsonPath("$.transaction.amount.value").value(97.07))
@@ -83,7 +89,8 @@ class TransactionControllerTest {
         mockMvc.perform(post("/transactions/{transactionId}", "not-a-uuid")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(validBody()))
-                .andExpect(status().isBadRequest());
+                .andExpect(status().isBadRequest())
+                .andExpect(header().exists(CorrelationIdFilter.CORRELATION_ID_HEADER));
     }
 
     @Test

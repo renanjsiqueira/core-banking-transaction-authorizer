@@ -20,10 +20,12 @@ import org.springframework.data.redis.core.ValueOperations;
 import org.springframework.data.redis.core.script.RedisScript;
 
 import br.com.renan.corebanking.authorization.exception.ResourceLockedException;
+import br.com.renan.corebanking.authorization.observability.TransactionAuthorizationMetrics;
 
 class RedisDistributedLockServiceTest {
     private StringRedisTemplate redisTemplate;
     private ValueOperations<String, String> valueOperations;
+    private TransactionAuthorizationMetrics metrics;
     private RedisDistributedLockService service;
 
     @SuppressWarnings("unchecked")
@@ -31,8 +33,9 @@ class RedisDistributedLockServiceTest {
     void setUp() {
         redisTemplate = mock(StringRedisTemplate.class);
         valueOperations = mock(ValueOperations.class);
+        metrics = mock(TransactionAuthorizationMetrics.class);
         when(redisTemplate.opsForValue()).thenReturn(valueOperations);
-        service = new RedisDistributedLockService(redisTemplate);
+        service = new RedisDistributedLockService(redisTemplate, metrics);
     }
 
     @Test
@@ -65,6 +68,7 @@ class RedisDistributedLockServiceTest {
 
         assertThat(result).isEqualTo("done");
         verify(redisTemplate).execute(any(RedisScript.class), anyList(), any());
+        verify(metrics).recordLockAcquired(eq("lock:account:1"), any(Duration.class));
     }
 
     @Test
@@ -74,5 +78,6 @@ class RedisDistributedLockServiceTest {
         assertThatThrownBy(() -> service.executeWithLock("lock:account:1",
                 Duration.ofSeconds(30), Duration.ofMillis(100), Duration.ofMillis(10), () -> "done"))
                 .isInstanceOf(ResourceLockedException.class);
+        verify(metrics).recordLockTimeout(eq("lock:account:1"), any(Duration.class));
     }
 }

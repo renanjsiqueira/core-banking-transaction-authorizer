@@ -20,12 +20,12 @@ inconsistências de documentação.
 
 Objetivo: tornar o comportamento financeiro e operacional visível em produção.
 
-| Item | Motivador | Critério de aceite |
-|---|---|---|
-| Métricas customizadas na API | Actuator expõe métricas técnicas, mas faltam sinais de negócio | Counters por status (`SUCCEEDED`/`FAILED`), motivo de falha, conflitos de idempotência e conta não encontrada |
-| Métricas do lock Redis | Alta contenção em `accountId` precisa aparecer antes de virar incidente | Counters/timers para lock adquirido, timeout, tempo de espera e chave por tipo (`account`/`transaction`) |
-| Correlation ID / MDC | Investigar uma transação exige seguir `transactionId` nos logs | Filtro/interceptor coloca `transactionId` e `X-Correlation-Id` no MDC e retorna header de correlação |
-| Logs estruturados de decisão | Auditoria e suporte precisam entender a decisão sem consultar o banco sempre | Logs de autorização incluem `transactionId`, `accountId`, `type`, `status`, `failureReason` e latência |
+| Status | Item | Motivador | Critério de aceite |
+|---|---|---|---|
+| Concluido | Métricas customizadas na API | Actuator expõe métricas técnicas, mas faltam sinais de negócio | Counters por status (`SUCCEEDED`/`FAILED`), motivo de falha, conflitos de idempotência e conta não encontrada |
+| Concluido | Métricas do lock Redis-compatible/Valkey | Alta contenção em `accountId` precisa aparecer antes de virar incidente | Counters/timers para lock adquirido, timeout, tempo de espera e chave por tipo (`account`/`transaction`) |
+| Concluido | Correlation ID / MDC | Investigar uma transação exige seguir `transactionId` nos logs | Filtro/interceptor coloca `transactionId` e `X-Correlation-Id` no MDC e retorna header de correlação |
+| Pendente | Logs estruturados de decisão | Auditoria e suporte precisam entender a decisão sem consultar o banco sempre | Logs de autorização incluem `transactionId`, `accountId`, `type`, `status`, `failureReason` e latência |
 
 ## Fase 2 — Resiliência explícita
 
@@ -34,9 +34,9 @@ decisões de fail-open/fail-closed.
 
 | Item | Motivador | Critério de aceite |
 |---|---|---|
-| Backoff com full jitter no lock Redis | Evita sincronização de threads competindo pela mesma conta | Retry do lock usa delay crescente com jitter e mantém timeout total configurável |
-| Circuit breaker para Redis | Redis é camada auxiliar; indisponibilidade não deve derrubar o banco de verdade sem decisão explícita | Circuit breaker documenta e implementa política escolhida: fail-open para seguir só com Postgres ou fail-closed para proteger latência |
-| Timeouts explícitos em integrações | Falhas lentas são piores que falhas rápidas em alta volumetria | Redis/SQS/Postgres têm timeouts documentados e configuráveis por ambiente |
+| Backoff com full jitter no lock Redis-compatible | Evita sincronização de threads competindo pela mesma conta | Retry do lock usa delay crescente com jitter e mantém timeout total configurável |
+| Circuit breaker para Redis-compatible/Valkey | Redis-compatible/Valkey é camada auxiliar; indisponibilidade não deve derrubar o banco de verdade sem decisão explícita | Circuit breaker documenta e implementa política escolhida: fail-open para seguir só com Postgres ou fail-closed para proteger latência |
+| Timeouts explícitos em integrações | Falhas lentas são piores que falhas rápidas em alta volumetria | Valkey/SQS/Postgres têm timeouts documentados e configuráveis por ambiente |
 | DLQ local no LocalStack | Produção prevê DLQ, mas o ambiente local ainda não simula poison messages | `docker-compose` cria fila principal + DLQ + redrive policy; README mostra como inspecionar a DLQ |
 
 ## Fase 3 — Testes e corner cases adicionais

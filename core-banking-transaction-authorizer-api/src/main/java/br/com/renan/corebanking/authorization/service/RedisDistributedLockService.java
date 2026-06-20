@@ -13,6 +13,7 @@ import org.springframework.data.redis.core.script.RedisScript;
 import org.springframework.stereotype.Service;
 
 import br.com.renan.corebanking.authorization.exception.ResourceLockedException;
+import br.com.renan.corebanking.authorization.observability.TransactionAuthorizationMetrics;
 
 @Service
 public class RedisDistributedLockService {
@@ -25,10 +26,13 @@ public class RedisDistributedLockService {
             Long.class);
 
     private final StringRedisTemplate redisTemplate;
+    private final TransactionAuthorizationMetrics metrics;
     private final String instanceId = UUID.randomUUID().toString();
 
-    public RedisDistributedLockService(StringRedisTemplate redisTemplate) {
+    public RedisDistributedLockService(StringRedisTemplate redisTemplate,
+                                       TransactionAuthorizationMetrics metrics) {
         this.redisTemplate = redisTemplate;
+        this.metrics = metrics;
     }
 
     public boolean tryLock(String key, String owner, Duration ttl) {
@@ -46,7 +50,8 @@ public class RedisDistributedLockService {
                                  Duration retryDelay,
                                  Supplier<T> operation) {
         String owner = instanceId + ":" + UUID.randomUUID();
-        long deadline = System.nanoTime() + waitTimeout.toNanos();
+        long start = System.nanoTime();
+        long deadline = start + waitTimeout.toNanos();
 
         boolean acquired = tryLock(key, owner, ttl);
         while (!acquired && System.nanoTime() < deadline) {
@@ -55,8 +60,10 @@ public class RedisDistributedLockService {
         }
 
         if (!acquired) {
+            metrics.recordLockTimeout(key, Duration.ofNanos(System.nanoTime() - start));
             throw new ResourceLockedException(key);
         }
+        metrics.recordLockAcquired(key, Duration.ofNanos(System.nanoTime() - start));
 
         try {
             return operation.get();

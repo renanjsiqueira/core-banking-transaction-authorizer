@@ -23,6 +23,7 @@ import br.com.renan.corebanking.authorization.exception.UnsupportedCurrencyExcep
 import br.com.renan.corebanking.authorization.mapper.TransactionResponseMapper;
 import br.com.renan.corebanking.authorization.repository.AccountRepository;
 import br.com.renan.corebanking.authorization.repository.TransactionRepository;
+import br.com.renan.corebanking.authorization.observability.TransactionAuthorizationMetrics;
 import br.com.renan.corebanking.domain.shared.enums.AccountStatus;
 import br.com.renan.corebanking.domain.shared.enums.FailureReason;
 import br.com.renan.corebanking.domain.shared.money.MoneyConstants;
@@ -37,19 +38,22 @@ public class TransactionAuthorizationServiceImpl implements TransactionAuthoriza
     private final RedisDistributedLockService lockService;
     private final RedisLockProperties lockProperties;
     private final TransactionOperations transactionOperations;
+    private final TransactionAuthorizationMetrics metrics;
 
     public TransactionAuthorizationServiceImpl(AccountRepository accountRepository,
                                                TransactionRepository transactionRepository,
                                                TransactionResponseMapper responseMapper,
                                                RedisDistributedLockService lockService,
                                                RedisLockProperties lockProperties,
-                                               TransactionOperations transactionOperations) {
+                                               TransactionOperations transactionOperations,
+                                               TransactionAuthorizationMetrics metrics) {
         this.accountRepository = accountRepository;
         this.transactionRepository = transactionRepository;
         this.responseMapper = responseMapper;
         this.lockService = lockService;
         this.lockProperties = lockProperties;
         this.transactionOperations = transactionOperations;
+        this.metrics = metrics;
     }
 
     @Override
@@ -78,8 +82,12 @@ public class TransactionAuthorizationServiceImpl implements TransactionAuthoriza
     }
 
     private TransactionResponseDTO doAuthorize(UUID transactionId, TransactionRequestDTO request, BigDecimal amount) {
-        Account account = accountRepository.findByIdForUpdate(request.accountId())
-                .orElseThrow(() -> new AccountNotFoundException(request.accountId()));
+        Optional<Account> accountResult = accountRepository.findByIdForUpdate(request.accountId());
+        if (accountResult.isEmpty()) {
+            metrics.recordAccountNotFound(request.type());
+            throw new AccountNotFoundException(request.accountId());
+        }
+        Account account = accountResult.get();
 
         Optional<Transaction> existing = findExistingTransaction(transactionId);
         if (existing.isPresent()) {
@@ -91,13 +99,16 @@ public class TransactionAuthorizationServiceImpl implements TransactionAuthoriza
                     transactionId, account.getId(), account.getStatus());
             Transaction refused = buildFailedTransaction(
                     transactionId, request, amount, FailureReason.ACCOUNT_DISABLED);
-            return buildResponse(transactionRepository.save(refused), account);
+            Transaction saved = transactionRepository.save(refused);
+            metrics.recordAuthorization(saved);
+            return buildResponse(saved, account);
         }
 
         Transaction transaction = switch (request.type()) {
             case CREDIT -> authorizeCredit(transactionId, request, account, amount);
             case DEBIT -> authorizeDebit(transactionId, request, account, amount);
         };
+        metrics.recordAuthorization(transaction);
         return buildResponse(transaction, account);
     }
 
@@ -106,10 +117,12 @@ public class TransactionAuthorizationServiceImpl implements TransactionAuthoriza
                                                 Transaction existing,
                                                 Account lockedAccount) {
         if (!isSameLogicalPayload(existing, request)) {
+            metrics.recordIdempotencyConflict(request.type());
             throw new TransactionConflictException(
                     "transactionId " + transactionId + " already used with a different payload");
         }
         log.info("Idempotent replay returning stored result: id={}", transactionId);
+        metrics.recordIdempotentReplay(existing);
         return buildResponse(existing, lockedAccount);
     }
 
