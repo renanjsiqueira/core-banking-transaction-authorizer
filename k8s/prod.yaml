@@ -1,0 +1,482 @@
+# Core Banking - Kubernetes manifests for PROD on AWS EKS.
+# Replace AWS account id, RDS/Valkey endpoints, SQS URL and secret values in CI/CD.
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: core-banking-prod
+  labels:
+    app.kubernetes.io/part-of: core-banking
+    environment: prod
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: core-banking-config
+  namespace: core-banking-prod
+  labels:
+    app.kubernetes.io/part-of: core-banking
+    environment: prod
+data:
+  AWS_REGION: sa-east-1
+  AWS_SQS_ENDPOINT: ""
+  AWS_SQS_QUEUE_URL: https://sqs.sa-east-1.amazonaws.com/333333333333/conta-bancaria-criada
+  DB_URL: jdbc:postgresql://prod-rds-proxy.core-banking.local:5432/transaction_authorization
+  DB_POOL_MAX_SIZE: "40"
+  DB_POOL_MIN_IDLE: "10"
+  LOG_LEVEL: INFO
+  REDIS_LOCK_ENABLED: "true"
+  REDIS_LOCK_CIRCUIT_BREAKER_ENABLED: "true"
+  REDIS_LOCK_CIRCUIT_BREAKER_FAILURE_THRESHOLD: "3"
+  REDIS_LOCK_CIRCUIT_BREAKER_OPEN_DURATION: 30s
+  REDIS_LOCK_CIRCUIT_BREAKER_FALLBACK: FAIL_OPEN
+  SPRING_DATA_REDIS_HOST: prod-valkey.core-banking.cache.amazonaws.com
+  SPRING_DATA_REDIS_PORT: "6379"
+  SQS_POLLING_ENABLED: "true"
+  SQS_POLLING_DELAY_MS: "1000"
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: core-banking-database
+  namespace: core-banking-prod
+  labels:
+    app.kubernetes.io/part-of: core-banking
+    environment: prod
+type: Opaque
+stringData:
+  DB_USERNAME: app
+  DB_PASSWORD: replace-me-prod
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: transaction-authorizer-api
+  namespace: core-banking-prod
+  annotations:
+    eks.amazonaws.com/role-arn: arn:aws:iam::333333333333:role/core-banking-prod-api-irsa
+  labels:
+    app.kubernetes.io/name: core-banking-transaction-authorizer-api
+    app.kubernetes.io/part-of: core-banking
+    environment: prod
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: account-created-listener
+  namespace: core-banking-prod
+  annotations:
+    eks.amazonaws.com/role-arn: arn:aws:iam::333333333333:role/core-banking-prod-listener-irsa
+  labels:
+    app.kubernetes.io/name: core-banking-account-created-listener
+    app.kubernetes.io/part-of: core-banking
+    environment: prod
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: core-banking-transaction-authorizer-api
+  namespace: core-banking-prod
+  labels:
+    app.kubernetes.io/name: core-banking-transaction-authorizer-api
+    app.kubernetes.io/component: api
+    app.kubernetes.io/part-of: core-banking
+    environment: prod
+spec:
+  replicas: 4
+  revisionHistoryLimit: 10
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 25%
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: core-banking-transaction-authorizer-api
+      app.kubernetes.io/component: api
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: core-banking-transaction-authorizer-api
+        app.kubernetes.io/component: api
+        app.kubernetes.io/part-of: core-banking
+        environment: prod
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/path: /actuator/prometheus
+        prometheus.io/port: "8080"
+    spec:
+      serviceAccountName: transaction-authorizer-api
+      terminationGracePeriodSeconds: 60
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                topologyKey: kubernetes.io/hostname
+                labelSelector:
+                  matchLabels:
+                    app.kubernetes.io/name: core-banking-transaction-authorizer-api
+                    app.kubernetes.io/component: api
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: topology.kubernetes.io/zone
+          whenUnsatisfiable: DoNotSchedule
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: core-banking-transaction-authorizer-api
+              app.kubernetes.io/component: api
+      containers:
+        - name: app
+          image: 333333333333.dkr.ecr.sa-east-1.amazonaws.com/core-banking-transaction-authorizer-api:prod
+          imagePullPolicy: Always
+          ports:
+            - name: http
+              containerPort: 8080
+          envFrom:
+            - configMapRef:
+                name: core-banking-config
+            - secretRef:
+                name: core-banking-database
+          env:
+            - name: SPRING_PROFILES_ACTIVE
+              value: prod
+            - name: SERVER_PORT
+              value: "8080"
+            - name: JAVA_TOOL_OPTIONS
+              value: "-XX:MaxRAMPercentage=75.0 -XX:+ExitOnOutOfMemoryError"
+          startupProbe:
+            httpGet:
+              path: /actuator/health/readiness
+              port: http
+            periodSeconds: 10
+            failureThreshold: 24
+          readinessProbe:
+            httpGet:
+              path: /actuator/health/readiness
+              port: http
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /actuator/health/liveness
+              port: http
+            periodSeconds: 20
+            timeoutSeconds: 3
+            failureThreshold: 3
+          lifecycle:
+            preStop:
+              exec:
+                command: ["/bin/sh", "-c", "sleep 15"]
+          resources:
+            requests:
+              cpu: "1"
+              memory: 1Gi
+            limits:
+              cpu: "2"
+              memory: 2Gi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: core-banking-transaction-authorizer-api
+  namespace: core-banking-prod
+  labels:
+    app.kubernetes.io/name: core-banking-transaction-authorizer-api
+    app.kubernetes.io/component: api
+    environment: prod
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: core-banking-transaction-authorizer-api
+    app.kubernetes.io/component: api
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: core-banking-transaction-authorizer-api
+  namespace: core-banking-prod
+  annotations:
+    alb.ingress.kubernetes.io/group.name: core-banking-prod
+    alb.ingress.kubernetes.io/healthcheck-path: /actuator/health/readiness
+    alb.ingress.kubernetes.io/listen-ports: '[{"HTTP":80}]'
+    alb.ingress.kubernetes.io/scheme: internal
+    alb.ingress.kubernetes.io/target-type: ip
+spec:
+  ingressClassName: alb
+  rules:
+    - host: transaction-authorizer.prod.core-banking.internal
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: core-banking-transaction-authorizer-api
+                port:
+                  name: http
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: core-banking-transaction-authorizer-api
+  namespace: core-banking-prod
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: core-banking-transaction-authorizer-api
+  minReplicas: 4
+  maxReplicas: 20
+  behavior:
+    scaleDown:
+      stabilizationWindowSeconds: 300
+      policies:
+        - type: Percent
+          value: 50
+          periodSeconds: 60
+    scaleUp:
+      stabilizationWindowSeconds: 60
+      policies:
+        - type: Percent
+          value: 100
+          periodSeconds: 60
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 60
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: 75
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: core-banking-transaction-authorizer-api
+  namespace: core-banking-prod
+spec:
+  minAvailable: 3
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: core-banking-transaction-authorizer-api
+      app.kubernetes.io/component: api
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: core-banking-account-created-listener
+  namespace: core-banking-prod
+  labels:
+    app.kubernetes.io/name: core-banking-account-created-listener
+    app.kubernetes.io/component: listener
+    app.kubernetes.io/part-of: core-banking
+    environment: prod
+spec:
+  replicas: 2
+  revisionHistoryLimit: 10
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: core-banking-account-created-listener
+      app.kubernetes.io/component: listener
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: core-banking-account-created-listener
+        app.kubernetes.io/component: listener
+        app.kubernetes.io/part-of: core-banking
+        environment: prod
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/path: /actuator/prometheus
+        prometheus.io/port: "8081"
+    spec:
+      serviceAccountName: account-created-listener
+      terminationGracePeriodSeconds: 60
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                topologyKey: kubernetes.io/hostname
+                labelSelector:
+                  matchLabels:
+                    app.kubernetes.io/name: core-banking-account-created-listener
+                    app.kubernetes.io/component: listener
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: topology.kubernetes.io/zone
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: core-banking-account-created-listener
+              app.kubernetes.io/component: listener
+      containers:
+        - name: app
+          image: 333333333333.dkr.ecr.sa-east-1.amazonaws.com/core-banking-account-created-listener:prod
+          imagePullPolicy: Always
+          ports:
+            - name: http
+              containerPort: 8081
+          envFrom:
+            - configMapRef:
+                name: core-banking-config
+            - secretRef:
+                name: core-banking-database
+          env:
+            - name: SPRING_PROFILES_ACTIVE
+              value: prod
+            - name: SERVER_PORT
+              value: "8081"
+            - name: DB_POOL_MAX_SIZE
+              value: "20"
+            - name: DB_POOL_MIN_IDLE
+              value: "5"
+            - name: JAVA_TOOL_OPTIONS
+              value: "-XX:MaxRAMPercentage=75.0 -XX:+ExitOnOutOfMemoryError"
+          startupProbe:
+            httpGet:
+              path: /actuator/health/readiness
+              port: http
+            periodSeconds: 10
+            failureThreshold: 24
+          readinessProbe:
+            httpGet:
+              path: /actuator/health/readiness
+              port: http
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /actuator/health/liveness
+              port: http
+            periodSeconds: 20
+            timeoutSeconds: 3
+            failureThreshold: 3
+          lifecycle:
+            preStop:
+              exec:
+                command: ["/bin/sh", "-c", "sleep 15"]
+          resources:
+            requests:
+              cpu: 500m
+              memory: 768Mi
+            limits:
+              cpu: "1"
+              memory: 1Gi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: core-banking-account-created-listener
+  namespace: core-banking-prod
+  labels:
+    app.kubernetes.io/name: core-banking-account-created-listener
+    app.kubernetes.io/component: listener
+    environment: prod
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: core-banking-account-created-listener
+    app.kubernetes.io/component: listener
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: core-banking-account-created-listener
+  namespace: core-banking-prod
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: core-banking-account-created-listener
+  minReplicas: 2
+  maxReplicas: 10
+  behavior:
+    scaleDown:
+      stabilizationWindowSeconds: 300
+      policies:
+        - type: Percent
+          value: 50
+          periodSeconds: 60
+    scaleUp:
+      stabilizationWindowSeconds: 60
+      policies:
+        - type: Percent
+          value: 100
+          periodSeconds: 60
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 65
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: core-banking-account-created-listener
+  namespace: core-banking-prod
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: core-banking-account-created-listener
+      app.kubernetes.io/component: listener

@@ -25,12 +25,31 @@ Documentação adicional: [arquitetura](docs/architecture.md) ·
 
 Arquivo editável para apresentação: [docs/cloud-deployment.drawio](docs/cloud-deployment.drawio).
 
+## Manifests Kubernetes
+
+Os manifests para EKS ficam em `k8s/`, separados por ambiente:
+
+- `k8s/dev.yaml`
+- `k8s/hml.yaml`
+- `k8s/prod.yaml`
+
+Antes de aplicar, substitua os placeholders de conta AWS, imagens ECR
+(preferencialmente por tag/digest imutável gerado no pipeline), endpoints de RDS
+Proxy/Aurora, Valkey, URL da fila SQS e segredos de banco.
+
+```bash
+kubectl apply -f k8s/dev.yaml
+kubectl apply -f k8s/hml.yaml
+kubectl apply -f k8s/prod.yaml
+```
+
 ## Estrutura
 
 ```
 core-banking-transaction-authorizer/
 ├── pom.xml                       # parent/aggregator
 ├── docker-compose.yml
+├── k8s/                           # manifests dev/hml/prod para EKS
 ├── requests/                     # coleção HTTP para revisão manual
 ├── core-banking-commons-domain/
 ├── core-banking-transaction-authorizer-api/

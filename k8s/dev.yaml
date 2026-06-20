@@ -1,0 +1,390 @@
+# Core Banking - Kubernetes manifests for DEV on AWS EKS.
+# Replace AWS account id, RDS/Valkey endpoints, SQS URL and secret values in CI/CD.
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: core-banking-dev
+  labels:
+    app.kubernetes.io/part-of: core-banking
+    environment: dev
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: core-banking-config
+  namespace: core-banking-dev
+  labels:
+    app.kubernetes.io/part-of: core-banking
+    environment: dev
+data:
+  AWS_REGION: sa-east-1
+  AWS_SQS_ENDPOINT: ""
+  AWS_SQS_QUEUE_URL: https://sqs.sa-east-1.amazonaws.com/111111111111/conta-bancaria-criada-dev
+  DB_URL: jdbc:postgresql://dev-rds-proxy.core-banking.local:5432/transaction_authorization
+  DB_POOL_MAX_SIZE: "10"
+  DB_POOL_MIN_IDLE: "2"
+  LOG_LEVEL: DEBUG
+  REDIS_LOCK_ENABLED: "true"
+  REDIS_LOCK_CIRCUIT_BREAKER_ENABLED: "true"
+  REDIS_LOCK_CIRCUIT_BREAKER_FAILURE_THRESHOLD: "3"
+  REDIS_LOCK_CIRCUIT_BREAKER_OPEN_DURATION: 30s
+  REDIS_LOCK_CIRCUIT_BREAKER_FALLBACK: FAIL_OPEN
+  SPRING_DATA_REDIS_HOST: dev-valkey.core-banking.cache.amazonaws.com
+  SPRING_DATA_REDIS_PORT: "6379"
+  SQS_POLLING_ENABLED: "true"
+  SQS_POLLING_DELAY_MS: "1000"
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: core-banking-database
+  namespace: core-banking-dev
+  labels:
+    app.kubernetes.io/part-of: core-banking
+    environment: dev
+type: Opaque
+stringData:
+  DB_USERNAME: app
+  DB_PASSWORD: replace-me-dev
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: transaction-authorizer-api
+  namespace: core-banking-dev
+  annotations:
+    eks.amazonaws.com/role-arn: arn:aws:iam::111111111111:role/core-banking-dev-api-irsa
+  labels:
+    app.kubernetes.io/name: core-banking-transaction-authorizer-api
+    app.kubernetes.io/part-of: core-banking
+    environment: dev
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: account-created-listener
+  namespace: core-banking-dev
+  annotations:
+    eks.amazonaws.com/role-arn: arn:aws:iam::111111111111:role/core-banking-dev-listener-irsa
+  labels:
+    app.kubernetes.io/name: core-banking-account-created-listener
+    app.kubernetes.io/part-of: core-banking
+    environment: dev
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: core-banking-transaction-authorizer-api
+  namespace: core-banking-dev
+  labels:
+    app.kubernetes.io/name: core-banking-transaction-authorizer-api
+    app.kubernetes.io/component: api
+    app.kubernetes.io/part-of: core-banking
+    environment: dev
+spec:
+  replicas: 1
+  revisionHistoryLimit: 3
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: core-banking-transaction-authorizer-api
+      app.kubernetes.io/component: api
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: core-banking-transaction-authorizer-api
+        app.kubernetes.io/component: api
+        app.kubernetes.io/part-of: core-banking
+        environment: dev
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/path: /actuator/prometheus
+        prometheus.io/port: "8080"
+    spec:
+      serviceAccountName: transaction-authorizer-api
+      terminationGracePeriodSeconds: 45
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: app
+          image: 111111111111.dkr.ecr.sa-east-1.amazonaws.com/core-banking-transaction-authorizer-api:dev
+          imagePullPolicy: Always
+          ports:
+            - name: http
+              containerPort: 8080
+          envFrom:
+            - configMapRef:
+                name: core-banking-config
+            - secretRef:
+                name: core-banking-database
+          env:
+            - name: SPRING_PROFILES_ACTIVE
+              value: dev
+            - name: SERVER_PORT
+              value: "8080"
+            - name: JAVA_TOOL_OPTIONS
+              value: "-XX:MaxRAMPercentage=75.0 -XX:+ExitOnOutOfMemoryError"
+          startupProbe:
+            httpGet:
+              path: /actuator/health/readiness
+              port: http
+            periodSeconds: 10
+            failureThreshold: 18
+          readinessProbe:
+            httpGet:
+              path: /actuator/health/readiness
+              port: http
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /actuator/health/liveness
+              port: http
+            periodSeconds: 20
+            timeoutSeconds: 3
+            failureThreshold: 3
+          lifecycle:
+            preStop:
+              exec:
+                command: ["/bin/sh", "-c", "sleep 10"]
+          resources:
+            requests:
+              cpu: 250m
+              memory: 512Mi
+            limits:
+              cpu: 750m
+              memory: 768Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: core-banking-transaction-authorizer-api
+  namespace: core-banking-dev
+  labels:
+    app.kubernetes.io/name: core-banking-transaction-authorizer-api
+    app.kubernetes.io/component: api
+    environment: dev
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: core-banking-transaction-authorizer-api
+    app.kubernetes.io/component: api
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: core-banking-transaction-authorizer-api
+  namespace: core-banking-dev
+  annotations:
+    alb.ingress.kubernetes.io/group.name: core-banking-dev
+    alb.ingress.kubernetes.io/healthcheck-path: /actuator/health/readiness
+    alb.ingress.kubernetes.io/listen-ports: '[{"HTTP":80}]'
+    alb.ingress.kubernetes.io/scheme: internal
+    alb.ingress.kubernetes.io/target-type: ip
+spec:
+  ingressClassName: alb
+  rules:
+    - host: transaction-authorizer.dev.core-banking.internal
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: core-banking-transaction-authorizer-api
+                port:
+                  name: http
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: core-banking-transaction-authorizer-api
+  namespace: core-banking-dev
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: core-banking-transaction-authorizer-api
+  minReplicas: 1
+  maxReplicas: 2
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: core-banking-account-created-listener
+  namespace: core-banking-dev
+  labels:
+    app.kubernetes.io/name: core-banking-account-created-listener
+    app.kubernetes.io/component: listener
+    app.kubernetes.io/part-of: core-banking
+    environment: dev
+spec:
+  replicas: 1
+  revisionHistoryLimit: 3
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: core-banking-account-created-listener
+      app.kubernetes.io/component: listener
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: core-banking-account-created-listener
+        app.kubernetes.io/component: listener
+        app.kubernetes.io/part-of: core-banking
+        environment: dev
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/path: /actuator/prometheus
+        prometheus.io/port: "8081"
+    spec:
+      serviceAccountName: account-created-listener
+      terminationGracePeriodSeconds: 45
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: app
+          image: 111111111111.dkr.ecr.sa-east-1.amazonaws.com/core-banking-account-created-listener:dev
+          imagePullPolicy: Always
+          ports:
+            - name: http
+              containerPort: 8081
+          envFrom:
+            - configMapRef:
+                name: core-banking-config
+            - secretRef:
+                name: core-banking-database
+          env:
+            - name: SPRING_PROFILES_ACTIVE
+              value: dev
+            - name: SERVER_PORT
+              value: "8081"
+            - name: DB_POOL_MAX_SIZE
+              value: "5"
+            - name: DB_POOL_MIN_IDLE
+              value: "1"
+            - name: JAVA_TOOL_OPTIONS
+              value: "-XX:MaxRAMPercentage=75.0 -XX:+ExitOnOutOfMemoryError"
+          startupProbe:
+            httpGet:
+              path: /actuator/health/readiness
+              port: http
+            periodSeconds: 10
+            failureThreshold: 18
+          readinessProbe:
+            httpGet:
+              path: /actuator/health/readiness
+              port: http
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /actuator/health/liveness
+              port: http
+            periodSeconds: 20
+            timeoutSeconds: 3
+            failureThreshold: 3
+          lifecycle:
+            preStop:
+              exec:
+                command: ["/bin/sh", "-c", "sleep 10"]
+          resources:
+            requests:
+              cpu: 150m
+              memory: 384Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: core-banking-account-created-listener
+  namespace: core-banking-dev
+  labels:
+    app.kubernetes.io/name: core-banking-account-created-listener
+    app.kubernetes.io/component: listener
+    environment: dev
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: core-banking-account-created-listener
+    app.kubernetes.io/component: listener
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: core-banking-account-created-listener
+  namespace: core-banking-dev
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: core-banking-account-created-listener
+  minReplicas: 1
+  maxReplicas: 2
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
