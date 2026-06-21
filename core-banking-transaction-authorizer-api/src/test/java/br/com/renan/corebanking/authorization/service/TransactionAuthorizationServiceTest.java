@@ -138,6 +138,32 @@ class TransactionAuthorizationServiceTest {
     }
 
     @Test
+    void retryAfterAccountLockTimeoutWithSameTransactionIdIsSafe() {
+        UUID transactionId = UUID.randomUUID();
+        Account account = AccountTestFactory.enabled("100.00");
+        var request = TransactionRequestTestFactory.credit(account.getId(), "10.00");
+
+        doThrow(new ResourceLockedException("lock:account:" + account.getId()))
+                .doAnswer(invocation -> ((Supplier<?>) invocation.getArgument(5)).get())
+                .when(lockService).executeWithLock(startsWith("lock:account:"), any(), any(), any(), any(), any());
+
+        assertThatThrownBy(() -> service.authorize(transactionId, request))
+                .isInstanceOf(ResourceLockedException.class);
+
+        verify(transactionOperations, never()).execute(any());
+        verify(accountRepository, never()).findByIdForUpdate(any());
+        verify(transactionRepository, never()).save(any(Transaction.class));
+
+        givenAccount(account);
+        TransactionResponseDTO response = service.authorize(transactionId, request);
+
+        assertThat(response.transaction().status()).isEqualTo(TransactionStatus.SUCCEEDED);
+        assertThat(account.getBalanceAmount()).isEqualByComparingTo("110.00");
+        verify(transactionOperations).execute(any());
+        verify(transactionRepository).save(any(Transaction.class));
+    }
+
+    @Test
     void debitApprovedSubtractsBalance() {
         Account account = AccountTestFactory.enabled("100.00");
         givenAccount(account);

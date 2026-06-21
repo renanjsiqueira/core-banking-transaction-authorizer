@@ -46,7 +46,7 @@ idempotência e falhas transitórias.
 
 | Status | Item | Motivador | Critério de aceite |
 |---|---|---|---|
-| Pendente | Teste de timeout do lock por conta | Garante que uma request concorrente não persiste transação ao estourar espera | Teste valida `ResourceLockedException`, ausência de escrita e retry seguro com mesmo `transactionId` |
+| Concluido | Teste de timeout do lock por conta | Garante que uma request concorrente não persiste transação ao estourar espera | Teste valida `ResourceLockedException`, ausência de escrita e retry seguro com mesmo `transactionId` |
 | Concluido | Teste de Redis indisponível | Define comportamento real do sistema quando a camada auxiliar cai | Teste cobre a política do circuit breaker/fallback |
 | Pendente | Testes de DLQ / mensagem inválida | Poison messages não devem travar drenagem da fila | Testes validam retry pelo SQS e envio para DLQ após limite configurado |
 | Pendente | Teste de contrato da coleção | Evita coleção desatualizada | Smoke test ou script valida os requests principais contra app local |
