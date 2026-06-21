@@ -10,6 +10,7 @@ import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import java.time.Duration;
 import java.util.UUID;
 
 import org.junit.jupiter.api.BeforeEach;
@@ -41,7 +42,7 @@ class AccountCreatedSqsConsumerTest {
         consumerService = mock(AccountCreatedConsumerService.class);
         SqsProperties properties = new SqsProperties(
                 "sa-east-1", "http://localhost:4566", QUEUE_URL, "test", "test",
-                10, 10, true, 1000L);
+                10, 10, Duration.ofSeconds(20), Duration.ofSeconds(15), true, 1000L);
         consumer = new AccountCreatedSqsConsumer(
                 sqsClient, properties, consumerService, new ObjectMapper(), new SimpleMeterRegistry());
     }

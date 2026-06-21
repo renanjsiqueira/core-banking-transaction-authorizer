@@ -6,6 +6,9 @@ spring:
     url: jdbc:postgresql://localhost:5432/transaction_authorization
     username: app
     password: app
+    hikari:
+      connection-timeout: ${DB_CONNECTION_TIMEOUT_MS:3000}
+      validation-timeout: ${DB_VALIDATION_TIMEOUT_MS:1000}
   flyway:
     enabled: false
 
@@ -20,6 +23,8 @@ app:
       polling-enabled: true
       max-number-of-messages: 10
       wait-time-seconds: 10
+      api-call-timeout: ${SQS_API_CALL_TIMEOUT:20s}
+      api-call-attempt-timeout: ${SQS_API_CALL_ATTEMPT_TIMEOUT:15s}
       polling-delay-ms: 1000
 
 management:

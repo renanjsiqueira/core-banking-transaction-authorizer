@@ -100,8 +100,13 @@ services:
       - SPRING_DATASOURCE_URL=jdbc:postgresql://postgres:5432/transaction_authorization
       - SPRING_DATASOURCE_USERNAME=app
       - SPRING_DATASOURCE_PASSWORD=app
+      - DB_CONNECTION_TIMEOUT_MS=3000
+      - DB_VALIDATION_TIMEOUT_MS=1000
+      - DB_STATEMENT_TIMEOUT_SECONDS=3
       - SPRING_DATA_REDIS_HOST=redis
       - SPRING_DATA_REDIS_PORT=6379
+      - REDIS_COMMAND_TIMEOUT=1s
+      - REDIS_CONNECT_TIMEOUT=1s
     ports:
       - "127.0.0.1:8080:8080"
     healthcheck:
@@ -131,11 +136,16 @@ services:
       - SPRING_DATASOURCE_URL=jdbc:postgresql://postgres:5432/transaction_authorization
       - SPRING_DATASOURCE_USERNAME=app
       - SPRING_DATASOURCE_PASSWORD=app
+      - DB_CONNECTION_TIMEOUT_MS=3000
+      - DB_VALIDATION_TIMEOUT_MS=1000
+      - DB_STATEMENT_TIMEOUT_SECONDS=3
       - APP_AWS_SQS_ENDPOINT=http://localstack:4566
       - APP_AWS_SQS_QUEUE_URL=http://localstack:4566/000000000000/conta-bancaria-criada
       - APP_AWS_SQS_REGION=sa-east-1
       - APP_AWS_SQS_ACCESS_KEY=test
       - APP_AWS_SQS_SECRET_KEY=test
+      - SQS_API_CALL_TIMEOUT=20s
+      - SQS_API_CALL_ATTEMPT_TIMEOUT=15s
       - APP_AWS_SQS_POLLING_ENABLED=true
     ports:
       - "127.0.0.1:8081:8081"

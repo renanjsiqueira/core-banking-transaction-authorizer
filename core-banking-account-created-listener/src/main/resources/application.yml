@@ -10,7 +10,8 @@ spring:
       pool-name: account-created-listener-pool
       maximum-pool-size: ${DB_POOL_MAX_SIZE:10}
       minimum-idle: ${DB_POOL_MIN_IDLE:2}
-      connection-timeout: 3000
+      connection-timeout: ${DB_CONNECTION_TIMEOUT_MS:3000}
+      validation-timeout: ${DB_VALIDATION_TIMEOUT_MS:1000}
 
   jpa:
     open-in-view: false
@@ -20,6 +21,7 @@ spring:
     properties:
       hibernate:
         jdbc:
+          timeout: ${DB_STATEMENT_TIMEOUT_SECONDS:3}
           time_zone: UTC
 
   # Schema is owned and migrated by core-banking-transaction-authorizer-api.
@@ -37,6 +39,8 @@ app:
       secret-key: ${AWS_SECRET_ACCESS_KEY:}
       max-number-of-messages: 10
       wait-time-seconds: 10
+      api-call-timeout: ${SQS_API_CALL_TIMEOUT:20s}
+      api-call-attempt-timeout: ${SQS_API_CALL_ATTEMPT_TIMEOUT:15s}
       polling-enabled: ${SQS_POLLING_ENABLED:false}
       polling-delay-ms: ${SQS_POLLING_DELAY_MS:1000}
 

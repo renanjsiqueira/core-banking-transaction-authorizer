@@ -277,6 +277,20 @@ O listener consome `conta-bancaria-criada` com long polling. Contas são
 importadas com saldo zero e moeda BRL; o processamento é **idempotente** (não
 duplica) e a mensagem só é **deletada após sucesso** (entrega at-least-once).
 
+## Timeouts configuráveis
+
+Falhas lentas são tratadas como risco de produção. Os principais timeouts ficam
+configuráveis por ambiente:
+
+| Integração | Variáveis | Default |
+|---|---|---|
+| PostgreSQL/Hikari | `DB_CONNECTION_TIMEOUT_MS`, `DB_VALIDATION_TIMEOUT_MS`, `DB_STATEMENT_TIMEOUT_SECONDS` | `3000`, `1000`, `3` |
+| Redis-compatible/Valkey | `REDIS_CONNECT_TIMEOUT`, `REDIS_COMMAND_TIMEOUT` | `1s`, `1s` |
+| SQS/AWS SDK | `SQS_API_CALL_ATTEMPT_TIMEOUT`, `SQS_API_CALL_TIMEOUT` | `15s`, `20s` |
+
+O timeout de tentativa do SQS é maior que o long polling (`wait-time-seconds=10`)
+para evitar interromper uma chamada saudável antes de a fila responder.
+
 ## Persistência e migrations
 
 O PostgreSQL é o banco relacional ACID compartilhado. As **migrations Flyway

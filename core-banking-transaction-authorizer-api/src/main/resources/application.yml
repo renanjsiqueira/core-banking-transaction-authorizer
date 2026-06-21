@@ -10,7 +10,8 @@ spring:
       pool-name: transaction-authorizer-api-pool
       maximum-pool-size: ${DB_POOL_MAX_SIZE:20}
       minimum-idle: ${DB_POOL_MIN_IDLE:5}
-      connection-timeout: 3000
+      connection-timeout: ${DB_CONNECTION_TIMEOUT_MS:3000}
+      validation-timeout: ${DB_VALIDATION_TIMEOUT_MS:1000}
 
   jpa:
     open-in-view: false
@@ -19,6 +20,7 @@ spring:
     properties:
       hibernate:
         jdbc:
+          timeout: ${DB_STATEMENT_TIMEOUT_SECONDS:3}
           time_zone: UTC
 
   # This service OWNS the schema: Flyway runs here.
@@ -30,6 +32,8 @@ spring:
     redis:
       host: ${SPRING_DATA_REDIS_HOST:localhost}
       port: ${SPRING_DATA_REDIS_PORT:6379}
+      timeout: ${REDIS_COMMAND_TIMEOUT:1s}
+      connect-timeout: ${REDIS_CONNECT_TIMEOUT:1s}
 
 # Redis is an auxiliary coordination layer only (distributed locks).
 # PostgreSQL remains the source of truth (ACID + pessimistic lock + unique PK).
