@@ -40,9 +40,16 @@ services:
       - SERVICES=sqs
       - SKIP_SSL_CERT_DOWNLOAD=1
       - DISABLE_EVENTS=1
+      - QUEUE_NAME=conta-bancaria-criada
+      - DLQ_NAME=conta-bancaria-criada-dlq
+      - SQS_MAX_RECEIVE_COUNT=5
+      - SQS_VISIBILITY_TIMEOUT=30
+      - SQS_RECEIVE_WAIT_TIME_SECONDS=10
     ports:
       - "127.0.0.1:4566:4566"
       - "127.0.0.1:4510-4559:4510-4559"
+    volumes:
+      - ./localstack/init/ready.d:/etc/localstack/init/ready.d:ro
     healthcheck:
       test: [ "CMD", "curl", "-f", "http://localhost:4566/_localstack/health" ]
       interval: 10s

@@ -95,8 +95,9 @@ O fluxo assíncrono do listener é coberto por testes unitários fortes do consu
 
 ## Subir tudo com Docker Compose
 
-O `docker-compose.yml` sobe: `postgres`, `localstack` (SQS), `message-generator`
-(cria a fila e publica **100.000** contas), `core-banking-transaction-authorizer-api` e
+O `docker-compose.yml` sobe: `postgres`, `localstack` (SQS com fila principal +
+DLQ local), `message-generator` (publica **100.000** contas),
+`core-banking-transaction-authorizer-api` e
 `core-banking-account-created-listener`.
 
 ```bash
@@ -137,6 +138,20 @@ export AWS_SECRET_ACCESS_KEY=test
 aws --endpoint-url=http://localhost:4566 \
   sqs receive-message \
   --queue-url http://localhost:4566/000000000000/conta-bancaria-criada \
+  --max-number-of-messages 10
+```
+
+Verificar a **DLQ local** e a redrive policy:
+
+```bash
+aws --endpoint-url=http://localhost:4566 --region sa-east-1 \
+  sqs get-queue-attributes \
+  --queue-url http://localhost:4566/000000000000/conta-bancaria-criada \
+  --attribute-names RedrivePolicy ApproximateNumberOfMessages ApproximateNumberOfMessagesNotVisible
+
+aws --endpoint-url=http://localhost:4566 --region sa-east-1 \
+  sqs receive-message \
+  --queue-url http://localhost:4566/000000000000/conta-bancaria-criada-dlq \
   --max-number-of-messages 10
 ```
 
@@ -185,6 +200,12 @@ export AWS_SECRET_ACCESS_KEY=test
 
 aws --endpoint-url=http://localhost:4566 --region sa-east-1 sqs receive-message \
   --queue-url http://localhost:4566/000000000000/conta-bancaria-criada \
+  --max-number-of-messages 10
+```
+
+```bash
+aws --endpoint-url=http://localhost:4566 --region sa-east-1 sqs receive-message \
+  --queue-url http://localhost:4566/000000000000/conta-bancaria-criada-dlq \
   --max-number-of-messages 10
 ```
 
@@ -327,11 +348,11 @@ Implementado neste case:
 - Lock distribuído Redis-compatible/Valkey por `transactionId` e `accountId`, com espera interna configurável, backoff exponencial e full jitter.
 - Circuit breaker para Redis-compatible/Valkey com `fail-open` padrão e `fail-closed` configurável.
 - Processamento SQS at-least-once: mensagem só é deletada após sucesso e importação é idempotente por `accountId`.
+- DLQ local no LocalStack com redrive policy para simular poison messages no ambiente de revisão.
 - Health checks, shutdown graceful, Actuator/Prometheus, métricas de negócio da API, correlation ID/MDC, Dockerfiles e `docker-compose` completo para execução local.
 
 Assumidamente deixado como evolução por risco/tempo:
 
-- DLQ local no LocalStack; em cloud a proposta já prevê SQS com DLQ e redrive policy.
 - Tracing distribuído com OpenTelemetry.
 - Teste de carga automatizado (`k6` ou Gatling) e guia formal de capacidade.
 
