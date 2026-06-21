@@ -128,7 +128,7 @@ public class TransactionAuthorizationServiceImpl implements TransactionAuthoriza
 
         if (account.getStatus() != AccountStatus.ENABLED) {
             Transaction refused = buildFailedTransaction(
-                    transactionId, request, amount, FailureReason.ACCOUNT_DISABLED);
+                    transactionId, request, amount, account.getBalanceAmount(), FailureReason.ACCOUNT_DISABLED);
             Transaction saved = transactionRepository.save(refused);
             metrics.recordAuthorization(saved);
             logAuthorizationDecision(saved, startedAtNanos);
@@ -192,7 +192,7 @@ public class TransactionAuthorizationServiceImpl implements TransactionAuthoriza
         BigDecimal newBalance = MoneyConstants.normalize(account.getBalanceAmount().add(amount));
         account.setBalanceAmount(newBalance);
         accountRepository.save(account);
-        return transactionRepository.save(buildSucceededTransaction(transactionId, request, amount));
+        return transactionRepository.save(buildSucceededTransaction(transactionId, request, amount, newBalance));
     }
 
     private Transaction authorizeDebit(UUID transactionId,
@@ -202,29 +202,31 @@ public class TransactionAuthorizationServiceImpl implements TransactionAuthoriza
         BigDecimal newBalance = MoneyConstants.normalize(account.getBalanceAmount().subtract(amount));
         if (newBalance.compareTo(BigDecimal.ZERO) < 0) {
             Transaction refused = buildFailedTransaction(
-                    transactionId, request, amount, FailureReason.INSUFFICIENT_FUNDS);
+                    transactionId, request, amount, account.getBalanceAmount(), FailureReason.INSUFFICIENT_FUNDS);
             return transactionRepository.save(refused);
         }
         account.setBalanceAmount(newBalance);
         accountRepository.save(account);
-        return transactionRepository.save(buildSucceededTransaction(transactionId, request, amount));
+        return transactionRepository.save(buildSucceededTransaction(transactionId, request, amount, newBalance));
     }
 
     private Transaction buildSucceededTransaction(UUID transactionId,
                                                   TransactionRequestDTO request,
-                                                  BigDecimal amount) {
+                                                  BigDecimal amount,
+                                                  BigDecimal resultingBalanceAmount) {
         return Transaction.approved(
                 transactionId, request.accountId(), request.type(),
-                amount, request.amount().currency(), now());
+                amount, resultingBalanceAmount, request.amount().currency(), now());
     }
 
     private Transaction buildFailedTransaction(UUID transactionId,
                                                TransactionRequestDTO request,
                                                BigDecimal amount,
+                                               BigDecimal resultingBalanceAmount,
                                                FailureReason reason) {
         return Transaction.rejected(
                 transactionId, request.accountId(), request.type(),
-                amount, request.amount().currency(), reason, now());
+                amount, resultingBalanceAmount, request.amount().currency(), reason, now());
     }
 
     private TransactionResponseDTO buildResponse(Transaction transaction, Account account) {

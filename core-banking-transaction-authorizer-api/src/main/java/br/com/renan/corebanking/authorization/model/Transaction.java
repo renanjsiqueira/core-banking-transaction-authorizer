@@ -43,6 +43,9 @@ public class Transaction {
     @Column(name = "amount", nullable = false, precision = 19, scale = MoneyConstants.SCALE)
     private BigDecimal amount;
 
+    @Column(name = "resulting_balance_amount", nullable = false, precision = 19, scale = MoneyConstants.SCALE)
+    private BigDecimal resultingBalanceAmount;
+
     @JdbcTypeCode(SqlTypes.CHAR)
     @Column(name = "currency", nullable = false, length = 3, columnDefinition = "char(3)")
     private String currency;
@@ -65,10 +68,32 @@ public class Transaction {
                                        UUID accountId,
                                        TransactionType type,
                                        BigDecimal amount,
+                                       BigDecimal resultingBalanceAmount,
                                        String currency,
                                        OffsetDateTime requestedAt) {
-        return build(id, accountId, type, amount, currency,
+        return build(id, accountId, type, amount, resultingBalanceAmount, currency,
                 TransactionStatus.SUCCEEDED, null, requestedAt);
+    }
+
+    public static Transaction rejected(UUID id,
+                                       UUID accountId,
+                                       TransactionType type,
+                                       BigDecimal amount,
+                                       BigDecimal resultingBalanceAmount,
+                                       String currency,
+                                       FailureReason failureReason,
+                                       OffsetDateTime requestedAt) {
+        return build(id, accountId, type, amount, resultingBalanceAmount, currency,
+                TransactionStatus.FAILED, failureReason, requestedAt);
+    }
+
+    public static Transaction approved(UUID id,
+                                       UUID accountId,
+                                       TransactionType type,
+                                       BigDecimal amount,
+                                       String currency,
+                                       OffsetDateTime requestedAt) {
+        return approved(id, accountId, type, amount, amount, currency, requestedAt);
     }
 
     public static Transaction rejected(UUID id,
@@ -78,14 +103,14 @@ public class Transaction {
                                        String currency,
                                        FailureReason failureReason,
                                        OffsetDateTime requestedAt) {
-        return build(id, accountId, type, amount, currency,
-                TransactionStatus.FAILED, failureReason, requestedAt);
+        return rejected(id, accountId, type, amount, amount, currency, failureReason, requestedAt);
     }
 
     private static Transaction build(UUID id,
                                      UUID accountId,
                                      TransactionType type,
                                      BigDecimal amount,
+                                     BigDecimal resultingBalanceAmount,
                                      String currency,
                                      TransactionStatus status,
                                      FailureReason failureReason,
@@ -95,6 +120,7 @@ public class Transaction {
         transaction.accountId = accountId;
         transaction.type = type;
         transaction.amount = MoneyConstants.normalize(amount);
+        transaction.resultingBalanceAmount = MoneyConstants.normalize(resultingBalanceAmount);
         transaction.currency = currency;
         transaction.status = status;
         transaction.failureReason = failureReason;

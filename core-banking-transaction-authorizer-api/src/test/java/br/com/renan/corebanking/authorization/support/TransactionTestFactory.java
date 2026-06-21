@@ -18,9 +18,21 @@ public final class TransactionTestFactory {
                 OffsetDateTime.now(ZoneOffset.UTC));
     }
 
+    public static Transaction approved(UUID id, UUID accountId, TransactionType type, String amount,
+                                       String resultingBalanceAmount) {
+        return Transaction.approved(id, accountId, type, new BigDecimal(amount),
+                new BigDecimal(resultingBalanceAmount), "BRL", OffsetDateTime.now(ZoneOffset.UTC));
+    }
+
     public static Transaction rejected(UUID id, UUID accountId, TransactionType type, String amount,
                                              FailureReason reason) {
         return Transaction.rejected(id, accountId, type, new BigDecimal(amount), "BRL", reason,
                 OffsetDateTime.now(ZoneOffset.UTC));
+    }
+
+    public static Transaction rejected(UUID id, UUID accountId, TransactionType type, String amount,
+                                       String resultingBalanceAmount, FailureReason reason) {
+        return Transaction.rejected(id, accountId, type, new BigDecimal(amount),
+                new BigDecimal(resultingBalanceAmount), "BRL", reason, OffsetDateTime.now(ZoneOffset.UTC));
     }
 }

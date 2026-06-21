@@ -273,10 +273,10 @@ class TransactionAuthorizationServiceTest {
 
     @Test
     void idempotentReplaySamePayloadReturnsStoredResultWithoutReapplyingBalance() {
-        Account account = AccountTestFactory.enabled("150.00");
+        Account account = AccountTestFactory.enabled("200.00");
         givenAccount(account);
         Transaction stored = TransactionTestFactory.approved(
-                UUID.randomUUID(), account.getId(), TransactionType.CREDIT, "50.00");
+                UUID.randomUUID(), account.getId(), TransactionType.CREDIT, "50.00", "150.00");
         when(transactionRepository.findById(stored.getId())).thenReturn(Optional.of(stored));
 
         TransactionResponseDTO response = service.authorize(
@@ -284,6 +284,7 @@ class TransactionAuthorizationServiceTest {
 
         assertThat(response.transaction().status()).isEqualTo(TransactionStatus.SUCCEEDED);
         assertThat(response.account().balance().amount()).isEqualByComparingTo("150.00");
+        assertThat(account.getBalanceAmount()).isEqualByComparingTo("200.00");
         verify(accountRepository, never()).save(any(Account.class));
         verify(transactionRepository, never()).save(any(Transaction.class));
         verify(metrics).recordIdempotentReplay(stored);

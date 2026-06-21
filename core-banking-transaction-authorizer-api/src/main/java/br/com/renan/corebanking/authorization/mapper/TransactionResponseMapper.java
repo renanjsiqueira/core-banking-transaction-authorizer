@@ -13,6 +13,10 @@ import br.com.renan.corebanking.authorization.model.Transaction;
 @Component
 public class TransactionResponseMapper {
     public TransactionResponseDTO toResponse(Transaction transaction, Account account) {
+        var balanceAmount = transaction.getResultingBalanceAmount() == null
+                ? account.getBalanceAmount()
+                : transaction.getResultingBalanceAmount();
+
         TransactionPayloadDTO transactionData = new TransactionPayloadDTO(
                 transaction.getId(),
                 transaction.getType(),
@@ -22,7 +26,7 @@ public class TransactionResponseMapper {
 
         AccountPayloadDTO accountData = new AccountPayloadDTO(
                 account.getId(),
-                new BalancePayloadDTO(account.getBalanceAmount(), account.getCurrency()));
+                new BalancePayloadDTO(balanceAmount, account.getCurrency()));
 
         return new TransactionResponseDTO(transactionData, accountData);
     }

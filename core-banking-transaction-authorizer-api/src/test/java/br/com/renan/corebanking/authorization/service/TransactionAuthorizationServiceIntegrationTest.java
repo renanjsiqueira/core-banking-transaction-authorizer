@@ -87,6 +87,22 @@ class TransactionAuthorizationServiceIntegrationTest extends AbstractPostgresInt
     }
 
     @Test
+    void idempotentReplayReturnsOriginalResultingBalanceAfterAccountChanges() {
+        UUID accountId = persistEnabledAccount("0.00");
+        UUID originalTransactionId = UUID.randomUUID();
+
+        TransactionResponseDTO first = service.authorize(
+                originalTransactionId, TransactionRequestTestFactory.credit(accountId, "100.00"));
+        service.authorize(UUID.randomUUID(), TransactionRequestTestFactory.credit(accountId, "50.00"));
+        TransactionResponseDTO replay = service.authorize(
+                originalTransactionId, TransactionRequestTestFactory.credit(accountId, "100.00"));
+
+        assertThat(first.account().balance().amount()).isEqualByComparingTo("100.00");
+        assertThat(replay.account().balance().amount()).isEqualByComparingTo("100.00");
+        assertThat(balanceOf(accountId)).isEqualByComparingTo("150.00");
+    }
+
+    @Test
     void idempotencyConflictThrowsAndDoesNotChangeBalance() {
         UUID accountId = persistEnabledAccount("100.00");
         UUID transactionId = UUID.randomUUID();

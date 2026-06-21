@@ -23,6 +23,7 @@ class TransactionTest {
         assertThat(tx.getStatus()).isEqualTo(TransactionStatus.SUCCEEDED);
         assertThat(tx.getFailureReason()).isNull();
         assertThat(tx.getCreatedAt()).isNotNull();
+        assertThat(tx.getResultingBalanceAmount()).isEqualByComparingTo("97.07");
     }
 
     @Test
@@ -40,9 +41,11 @@ class TransactionTest {
     void amountIsNormalizedToScaleTwo() {
         Transaction tx = Transaction.approved(
                 UUID.randomUUID(), UUID.randomUUID(), TransactionType.CREDIT,
-                new BigDecimal("100"), "BRL", OffsetDateTime.now(ZoneOffset.UTC));
+                new BigDecimal("100"), new BigDecimal("150"), "BRL", OffsetDateTime.now(ZoneOffset.UTC));
 
         assertThat(tx.getAmount().scale()).isEqualTo(2);
         assertThat(tx.getAmount()).isEqualByComparingTo("100.00");
+        assertThat(tx.getResultingBalanceAmount().scale()).isEqualTo(2);
+        assertThat(tx.getResultingBalanceAmount()).isEqualByComparingTo("150.00");
     }
 }
