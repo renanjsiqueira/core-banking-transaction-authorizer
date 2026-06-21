@@ -96,6 +96,20 @@ O fluxo assíncrono do listener é coberto por testes unitários fortes do consu
 
 ---
 
+## Collection Postman
+
+Arquivos importáveis:
+
+- Collection: [postman/core-banking-transaction-authorizer.postman_collection.json](postman/core-banking-transaction-authorizer.postman_collection.json)
+- Environment local: [postman/core-banking-local.postman_environment.json](postman/core-banking-local.postman_environment.json)
+
+Após subir a stack local, importe os dois arquivos no Postman, selecione o
+environment `Core Banking - Local` e execute primeiro `Seed account through
+LocalStack SQS` para publicar uma conta conhecida. Aguarde alguns segundos para o
+listener importar a conta e então rode os cenários de autorização.
+
+---
+
 ## Teste de carga local
 
 Com a stack local em execução e contas importadas, rode:
@@ -375,3 +389,7 @@ Assumidamente deixado como evolução por risco/tempo:
 - Teste de carga automatizado (`k6` ou Gatling) e guia formal de capacidade.
 
 Esses itens estão priorizados em [docs/production-readiness-backlog.md](docs/production-readiness-backlog.md).
+
+## Licença
+
+Este projeto está licenciado sob a [MIT License](LICENSE).
