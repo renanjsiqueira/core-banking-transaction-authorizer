@@ -40,6 +40,38 @@ Cada serviço faz deploy de forma independente (imagens separadas, rollouts
 separados). O schema compartilhado é o único acoplamento — protegido pelo job de
 migration rodando primeiro e por migrations retrocompatíveis.
 
+## Quality gates e scans
+
+Para uma esteira de produção, os gates recomendados são:
+
+| Gate | Ferramenta sugerida | Politica |
+|---|---|---|
+| Build e unit tests | Maven/Surefire | Falha bloqueia merge/deploy |
+| Integração com infraestrutura | Testcontainers + LocalStack | Job separado com runner Docker dedicado |
+| Cobertura e qualidade | SonarCloud/SonarQube ou JaCoCo + SpotBugs | Bloquear queda de cobertura e bugs críticos |
+| Dependências vulneráveis | OWASP Dependency-Check ou Snyk | Bloquear CVE High/Critical sem exceção aprovada |
+| Imagens vulneráveis | Trivy ou Grype | Bloquear High/Critical em imagem runtime |
+| IaC/Kubernetes | kubeconform, kube-score ou Checkov | Bloquear manifest inválido e riscos básicos |
+
+No workflow atual, o caminho automatizado de `master` já executa build/testes
+unitários, build das imagens, push no ECR e rollout no EKS. Para ativar os scans
+em uma conta real, entrariam jobs antes de `build-and-push`, por exemplo:
+
+```text
+verify -> dependency-scan -> static-analysis -> image-scan -> deploy-prod
+```
+
+Secrets/variáveis típicas:
+
+- `SONAR_TOKEN`, se usar SonarCloud/SonarQube.
+- `SNYK_TOKEN`, se usar Snyk em vez de OWASP Dependency-Check.
+- Nenhuma secret obrigatória para Trivy em modo básico, apenas acesso ao registry
+  depois do login ECR.
+
+A decisão de deixar os scans como proposta documentada evita criar uma pipeline
+que falhe em repositório de avaliação sem tokens externos, mas deixa claro quais
+gates seriam obrigatórios antes de produção real.
+
 ## GitHub Actions proposto
 
 O workflow [`.github/workflows/deploy-prod.yml`](../.github/workflows/deploy-prod.yml)

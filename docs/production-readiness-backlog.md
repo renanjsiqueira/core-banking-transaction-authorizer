@@ -59,9 +59,9 @@ risco.
 | Status | Item | Motivador | Critério de aceite |
 |---|---|---|---|
 | Concluido | Rodar containers como usuário não-root | Boa prática básica de segurança em produção | Dockerfiles criam usuário de runtime e não executam como root |
-| Pendente | Imagem runtime menor | Reduz superfície e tempo de pull | Avaliar `eclipse-temurin:21-jre-alpine` ou distroless, mantendo healthcheck viável |
-| Pendente | Health/readiness específicos | Orquestrador precisa distinguir app vivo de app pronto | Actuator readiness/liveness documentados para API e listener |
-| Pendente | Scans no pipeline | O case pede produção e mitigação de risco | Pipeline documenta Trivy/OWASP/Sonar com falha por severidade configurada |
+| Concluido | Imagem runtime menor | Reduz superfície e tempo de pull | Avaliar `eclipse-temurin:21-jre-alpine` ou distroless, mantendo healthcheck viável |
+| Concluido | Health/readiness específicos | Orquestrador precisa distinguir app vivo de app pronto | Actuator readiness/liveness documentados para API e listener |
+| Concluido | Scans no pipeline | O case pede produção e mitigação de risco | Pipeline documenta Trivy/OWASP/Sonar com falha por severidade configurada |
 
 ## Fase 5 — Escala e capacidade
 
