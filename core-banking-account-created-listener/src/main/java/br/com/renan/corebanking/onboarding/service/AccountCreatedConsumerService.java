@@ -8,6 +8,7 @@ import java.util.UUID;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 
 import br.com.renan.corebanking.onboarding.dto.sqs.AccountCreatedMessageDTO;
@@ -53,7 +54,13 @@ public class AccountCreatedConsumerService {
         }
 
         Account account = Account.newImportedAccount(id, ownerId, status, sourceCreatedAt);
-        accountRepository.save(account);
+        try {
+            accountRepository.saveAndFlush(account);
+        } catch (DataIntegrityViolationException ex) {
+            duplicatesCounter.increment();
+            log.info("Account already exists after concurrent import, skipping import: id={}", id);
+            return;
+        }
         importedCounter.increment();
         log.info("Account imported successfully: id={}, status={}", id, status);
     }

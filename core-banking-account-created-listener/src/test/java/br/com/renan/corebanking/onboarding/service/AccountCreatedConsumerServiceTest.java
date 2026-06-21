@@ -22,6 +22,7 @@ import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
+import org.springframework.dao.DataIntegrityViolationException;
 
 import br.com.renan.corebanking.onboarding.dto.sqs.AccountCreatedMessageDTO;
 import br.com.renan.corebanking.onboarding.model.Account;
@@ -44,7 +45,7 @@ class AccountCreatedConsumerServiceTest {
         when(accountRepository.existsById(any(UUID.class))).thenReturn(false);
         service.importAccount(message);
         ArgumentCaptor<Account> captor = ArgumentCaptor.forClass(Account.class);
-        verify(accountRepository).save(captor.capture());
+        verify(accountRepository).saveAndFlush(captor.capture());
         return captor.getValue();
     }
 
@@ -70,7 +71,18 @@ class AccountCreatedConsumerServiceTest {
 
         service.importAccount(AccountCreatedMessageTestFactory.valid());
 
-        verify(accountRepository, never()).save(any());
+        verify(accountRepository, never()).saveAndFlush(any());
+    }
+
+    @Test
+    void skipsConcurrentDuplicateAccount() {
+        when(accountRepository.existsById(any(UUID.class))).thenReturn(false);
+        when(accountRepository.saveAndFlush(any(Account.class)))
+                .thenThrow(new DataIntegrityViolationException("duplicate key"));
+
+        service.importAccount(AccountCreatedMessageTestFactory.valid());
+
+        verify(accountRepository).saveAndFlush(any(Account.class));
     }
 
     @Test
