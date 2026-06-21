@@ -16,6 +16,9 @@ import java.util.function.Supplier;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.springframework.boot.test.system.CapturedOutput;
+import org.springframework.boot.test.system.OutputCaptureExtension;
 import org.springframework.transaction.support.SimpleTransactionStatus;
 import org.springframework.transaction.support.TransactionCallback;
 import org.springframework.transaction.support.TransactionOperations;
@@ -40,6 +43,7 @@ import br.com.renan.corebanking.domain.shared.enums.AccountStatus;
 import br.com.renan.corebanking.domain.shared.enums.TransactionStatus;
 import br.com.renan.corebanking.domain.shared.enums.TransactionType;
 
+@ExtendWith(OutputCaptureExtension.class)
 class TransactionAuthorizationServiceTest {
     private AccountRepository accountRepository;
     private TransactionRepository transactionRepository;
@@ -78,16 +82,25 @@ class TransactionAuthorizationServiceTest {
     }
 
     @Test
-    void creditApprovedAddsBalance() {
+    void creditApprovedAddsBalance(CapturedOutput output) {
+        UUID transactionId = UUID.randomUUID();
         Account account = AccountTestFactory.enabled("100.00");
         givenAccount(account);
 
         TransactionResponseDTO response = service.authorize(
-                UUID.randomUUID(), TransactionRequestTestFactory.credit(account.getId(), "50.00"));
+                transactionId, TransactionRequestTestFactory.credit(account.getId(), "50.00"));
 
         assertThat(response.transaction().status()).isEqualTo(TransactionStatus.SUCCEEDED);
         assertThat(account.getBalanceAmount()).isEqualByComparingTo("150.00");
         assertThat(response.account().balance().amount()).isEqualByComparingTo("150.00");
+        assertThat(output.getAll())
+                .contains("event=authorization_decision")
+                .contains("transactionId=" + transactionId)
+                .contains("accountId=" + account.getId())
+                .contains("type=CREDIT")
+                .contains("status=SUCCEEDED")
+                .contains("failureReason=NONE")
+                .contains("latencyMs=");
         verify(accountRepository).save(account);
 
         verify(lockService).executeWithLock(startsWith("lock:transaction:"), any(), any(), any(), any(), any());
@@ -138,14 +151,23 @@ class TransactionAuthorizationServiceTest {
     }
 
     @Test
-    void debitInsufficientFundsSavesFailedTransaction() {
+    void debitInsufficientFundsSavesFailedTransaction(CapturedOutput output) {
+        UUID transactionId = UUID.randomUUID();
         Account account = AccountTestFactory.enabled("20.00");
         givenAccount(account);
 
         TransactionResponseDTO response = service.authorize(
-                UUID.randomUUID(), TransactionRequestTestFactory.debit(account.getId(), "50.00"));
+                transactionId, TransactionRequestTestFactory.debit(account.getId(), "50.00"));
 
         assertThat(response.transaction().status()).isEqualTo(TransactionStatus.FAILED);
+        assertThat(output.getAll())
+                .contains("event=authorization_decision")
+                .contains("transactionId=" + transactionId)
+                .contains("accountId=" + account.getId())
+                .contains("type=DEBIT")
+                .contains("status=FAILED")
+                .contains("failureReason=INSUFFICIENT_FUNDS")
+                .contains("latencyMs=");
         verify(transactionRepository).save(any(Transaction.class));
         verify(metrics).recordAuthorization(any(Transaction.class));
     }
@@ -162,13 +184,22 @@ class TransactionAuthorizationServiceTest {
     }
 
     @Test
-    void accountNotFoundThrows() {
+    void accountNotFoundThrows(CapturedOutput output) {
+        UUID transactionId = UUID.randomUUID();
         UUID accountId = UUID.randomUUID();
         when(accountRepository.findByIdForUpdate(accountId)).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> service.authorize(
-                UUID.randomUUID(), TransactionRequestTestFactory.credit(accountId, "10.00")))
+                transactionId, TransactionRequestTestFactory.credit(accountId, "10.00")))
                 .isInstanceOf(AccountNotFoundException.class);
+        assertThat(output.getAll())
+                .contains("event=authorization_decision")
+                .contains("transactionId=" + transactionId)
+                .contains("accountId=" + accountId)
+                .contains("type=CREDIT")
+                .contains("status=FAILED")
+                .contains("failureReason=ACCOUNT_NOT_FOUND")
+                .contains("latencyMs=");
         verify(metrics).recordAccountNotFound(TransactionType.CREDIT);
     }
 

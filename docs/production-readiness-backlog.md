@@ -25,7 +25,7 @@ Objetivo: tornar o comportamento financeiro e operacional visível em produção
 | Concluido | Métricas customizadas na API | Actuator expõe métricas técnicas, mas faltam sinais de negócio | Counters por status (`SUCCEEDED`/`FAILED`), motivo de falha, conflitos de idempotência e conta não encontrada |
 | Concluido | Métricas do lock Redis-compatible/Valkey | Alta contenção em `accountId` precisa aparecer antes de virar incidente | Counters/timers para lock adquirido, timeout, tempo de espera e chave por tipo (`account`/`transaction`) |
 | Concluido | Correlation ID / MDC | Investigar uma transação exige seguir `transactionId` nos logs | Filtro/interceptor coloca `transactionId` e `X-Correlation-Id` no MDC e retorna header de correlação |
-| Pendente | Logs estruturados de decisão | Auditoria e suporte precisam entender a decisão sem consultar o banco sempre | Logs de autorização incluem `transactionId`, `accountId`, `type`, `status`, `failureReason` e latência |
+| Concluido | Logs estruturados de decisão | Auditoria e suporte precisam entender a decisão sem consultar o banco sempre | Logs de autorização incluem `transactionId`, `accountId`, `type`, `status`, `failureReason` e latência |
 
 ## Fase 2 — Resiliência explícita
 

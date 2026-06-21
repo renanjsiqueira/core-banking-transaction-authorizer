@@ -289,7 +289,10 @@ serviços (ver [docs/pipeline.md](docs/pipeline.md)).
 
 Ambos expõem Actuator (`/actuator/health`, `/actuator/prometheus`) e métricas
 Micrometer. A API propaga/retorna `X-Correlation-Id` e inclui `correlationId` e
-`transactionId` no MDC dos logs. A API publica métricas de negócio:
+`transactionId` no MDC dos logs. A autorização também emite logs estruturados de
+decisão no formato `event=authorization_decision`, com `transactionId`,
+`accountId`, `type`, `status`, `failureReason` e `latencyMs`. A API publica
+métricas de negócio:
 `transactions.authorizations.total`, `transactions.idempotency.replays.total`,
 `transactions.idempotency.conflicts.total`, `transactions.accounts.not_found.total`,
 `transactions.locks.acquired.total`, `transactions.locks.timeouts.total` e
