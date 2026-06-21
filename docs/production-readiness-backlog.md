@@ -67,11 +67,11 @@ risco.
 
 Objetivo: provar que o desenho aguenta alta volumetria e orientar operação.
 
-| Item | Motivador | Critério de aceite |
-|---|---|---|
-| Teste de carga local (`k6` ou Gatling) | Concorrência e p99 precisam ser medidos, não apenas presumidos | Script executa créditos/débitos concorrentes e reporta RPS, p95/p99, erro e lock timeout |
-| Guia de dimensionamento | Facilita discussão de HPA, pool de conexões e Redis | Documento relaciona `DB_POOL_MAX_SIZE`, réplicas, HPA, latência e contenção por conta |
-| Alertas sugeridos | Sem alertas, métricas viram painel decorativo | Backlog ou docs listam alertas para erro 5xx, p99, lock timeout, DLQ > 0, SQS backlog e conexão DB |
+| Status | Item | Motivador | Critério de aceite |
+|---|---|---|---|
+| Concluido | Teste de carga local (`k6` ou Gatling) | Concorrência e p99 precisam ser medidos, não apenas presumidos | Script executa créditos/débitos concorrentes e reporta RPS, p95/p99, erro e lock timeout |
+| Concluido | Guia de dimensionamento | Facilita discussão de HPA, pool de conexões e Redis | Documento relaciona `DB_POOL_MAX_SIZE`, réplicas, HPA, latência e contenção por conta |
+| Concluido | Alertas sugeridos | Sem alertas, métricas viram painel decorativo | Backlog ou docs listam alertas para erro 5xx, p99, lock timeout, DLQ > 0, SQS backlog e conexão DB |
 
 ## Ordem recomendada
 

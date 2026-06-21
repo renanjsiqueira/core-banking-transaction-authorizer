@@ -17,6 +17,7 @@ está documentada em [docs/adr/0001-two-services-architecture.md](docs/adr/0001-
 
 Documentação adicional: [arquitetura](docs/architecture.md) ·
 [deploy em cloud](docs/cloud-deployment.md) · [pipeline CI/CD](docs/pipeline.md) ·
+[capacidade](docs/capacity-planning.md) · [alertas](docs/alerts.md) ·
 [backlog production readiness](docs/production-readiness-backlog.md).
 
 ## Diagrama de deploy em cloud
@@ -64,6 +65,7 @@ core-banking-transaction-authorizer/
 - **JDK 21**, **Maven 3.9+**
 - **Docker** + **Docker Compose v2**
 - (Opcional) **AWS CLI** para inspecionar a fila SQS
+- (Opcional) **k6** para executar o teste de carga local
 
 ## Build e testes
 
@@ -90,6 +92,21 @@ O uso de PostgreSQL real nos testes de integração evita diferenças de comport
 Os testes de concorrência usam `ExecutorService` + `CountDownLatch` (disparo simultâneo) e `assertTimeout`, sem `Thread.sleep` nem estado compartilhado entre testes. Incluem: 20 débitos simultâneos (10 `SUCCEEDED` / 10 `FAILED`, saldo final `0.00`, nunca negativo), 50 créditos simultâneos (saldo `50.00`) e 10 chamadas simultâneas com o mesmo `transactionId` (saldo aplicado uma única vez, `10.00`).
 
 O fluxo assíncrono do listener é coberto por testes unitários fortes do consumer (mockando `SqsClient`) e por um teste de integração com PostgreSQL que valida a persistência da conta. O fluxo ponta-a-ponta com SQS pode ser validado localmente via `docker compose up --build`.
+
+---
+
+## Teste de carga local
+
+Com a stack local em execução e contas importadas, rode:
+
+```bash
+./scripts/run-load-test.sh --vus 20 --duration 2m
+```
+
+O script usa k6, busca contas `ENABLED` no PostgreSQL local e reporta RPS,
+p95/p99, taxa de erro, lock timeouts e recusas por regra de negócio. Cenários de
+baseline, conta quente e dimensionamento estão em
+[docs/capacity-planning.md](docs/capacity-planning.md).
 
 ---
 
