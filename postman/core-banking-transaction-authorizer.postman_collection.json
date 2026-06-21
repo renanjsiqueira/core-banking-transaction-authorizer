@@ -1,0 +1,815 @@
+{
+  "info": {
+    "_postman_id": "d46c1bd8-2a47-49cb-9874-7e9579e5cc21",
+    "name": "Core Banking - Transaction Authorizer",
+    "description": "Collection for local validation of the Core Banking transaction authorizer case. Import the `Core Banking - Local` environment, start the stack, optionally run `Seed account through LocalStack SQS`, wait for the listener to import the account, then run the authorization scenarios.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "event": [
+    {
+      "listen": "prerequest",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "const env = pm.environment;",
+          "const uuid = () => pm.variables.replaceIn('{{$guid}}');",
+          "",
+          "if (!env.get('accountId')) {",
+          "  env.set('accountId', env.get('seedAccountId') || uuid());",
+          "}",
+          "if (!env.get('seedAccountId')) {",
+          "  env.set('seedAccountId', env.get('accountId') || uuid());",
+          "}",
+          "if (!env.get('seedOwnerId')) {",
+          "  env.set('seedOwnerId', uuid());",
+          "}",
+          "if (!env.get('missingAccountId')) {",
+          "  env.set('missingAccountId', '00000000-0000-4000-8000-000000000000');",
+          "}"
+        ]
+      }
+    }
+  ],
+  "variable": [
+    {
+      "key": "apiBaseUrl",
+      "value": "http://localhost:8080"
+    },
+    {
+      "key": "listenerBaseUrl",
+      "value": "http://localhost:8081"
+    },
+    {
+      "key": "localstackBaseUrl",
+      "value": "http://localhost:4566"
+    }
+  ],
+  "item": [
+    {
+      "name": "Setup",
+      "item": [
+        {
+          "name": "API health",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('health has status', () => pm.expect(pm.response.json()).to.have.property('status'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{apiBaseUrl}}/actuator/health",
+              "host": [
+                "{{apiBaseUrl}}"
+              ],
+              "path": [
+                "actuator",
+                "health"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Listener health",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('health has status', () => pm.expect(pm.response.json()).to.have.property('status'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{listenerBaseUrl}}/actuator/health",
+              "host": [
+                "{{listenerBaseUrl}}"
+              ],
+              "path": [
+                "actuator",
+                "health"
+              ]
+            }
+          }
+        },
+        {
+          "name": "API OpenAPI contract",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('openapi document', () => pm.expect(pm.response.json()).to.have.property('openapi'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{apiBaseUrl}}/v3/api-docs",
+              "host": [
+                "{{apiBaseUrl}}"
+              ],
+              "path": [
+                "v3",
+                "api-docs"
+              ]
+            }
+          }
+        },
+        {
+          "name": "API Prometheus metrics",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('prometheus text', () => pm.expect(pm.response.text()).to.include('# HELP'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{apiBaseUrl}}/actuator/prometheus",
+              "host": [
+                "{{apiBaseUrl}}"
+              ],
+              "path": [
+                "actuator",
+                "prometheus"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Seed account through LocalStack SQS",
+          "description": "Optional local setup request. Run it with LocalStack and listener up, then wait a few seconds for the listener to import `{{accountId}}`.",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.environment.set('accountId', pm.environment.get('seedAccountId'));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('localstack accepted message', () => pm.expect(pm.response.code).to.be.oneOf([200, 201]));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/x-www-form-urlencoded"
+              }
+            ],
+            "body": {
+              "mode": "urlencoded",
+              "urlencoded": [
+                {
+                  "key": "Action",
+                  "value": "SendMessage",
+                  "type": "text"
+                },
+                {
+                  "key": "Version",
+                  "value": "2012-11-05",
+                  "type": "text"
+                },
+                {
+                  "key": "MessageBody",
+                  "value": "{\"account\":{\"id\":\"{{seedAccountId}}\",\"owner\":\"{{seedOwnerId}}\",\"created_at\":\"1634874339\",\"status\":\"ENABLED\"}}",
+                  "type": "text"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{localstackBaseUrl}}/{{queuePath}}",
+              "host": [
+                "{{localstackBaseUrl}}"
+              ],
+              "path": [
+                "{{queuePath}}"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Authorization",
+      "item": [
+        {
+          "name": "Credit approved",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.environment.set('creditTransactionId', pm.variables.replaceIn('{{$guid}}'));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "const json = pm.response.json();",
+                  "pm.test('transaction succeeded', () => pm.expect(json.transaction.status).to.eql('SUCCEEDED'));",
+                  "pm.test('transaction type is CREDIT', () => pm.expect(json.transaction.type).to.eql('CREDIT'));",
+                  "pm.test('account id matches', () => pm.expect(json.account.id).to.eql(pm.environment.get('accountId')));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"accountId\": \"{{accountId}}\",\n  \"type\": \"CREDIT\",\n  \"amount\": {\n    \"value\": 100.00,\n    \"currency\": \"BRL\"\n  }\n}"
+            },
+            "url": {
+              "raw": "{{apiBaseUrl}}/transactions/{{creditTransactionId}}",
+              "host": [
+                "{{apiBaseUrl}}"
+              ],
+              "path": [
+                "transactions",
+                "{{creditTransactionId}}"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Debit approved",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.environment.set('debitTransactionId', pm.variables.replaceIn('{{$guid}}'));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "const json = pm.response.json();",
+                  "pm.test('transaction succeeded', () => pm.expect(json.transaction.status).to.eql('SUCCEEDED'));",
+                  "pm.test('transaction type is DEBIT', () => pm.expect(json.transaction.type).to.eql('DEBIT'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"accountId\": \"{{accountId}}\",\n  \"type\": \"DEBIT\",\n  \"amount\": {\n    \"value\": 25.00,\n    \"currency\": \"BRL\"\n  }\n}"
+            },
+            "url": {
+              "raw": "{{apiBaseUrl}}/transactions/{{debitTransactionId}}",
+              "host": [
+                "{{apiBaseUrl}}"
+              ],
+              "path": [
+                "transactions",
+                "{{debitTransactionId}}"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Debit refused by insufficient funds",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.environment.set('insufficientFundsTransactionId', pm.variables.replaceIn('{{$guid}}'));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "const json = pm.response.json();",
+                  "pm.test('transaction failed by business rule', () => pm.expect(json.transaction.status).to.eql('FAILED'));",
+                  "pm.test('transaction type is DEBIT', () => pm.expect(json.transaction.type).to.eql('DEBIT'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"accountId\": \"{{accountId}}\",\n  \"type\": \"DEBIT\",\n  \"amount\": {\n    \"value\": 999999999.99,\n    \"currency\": \"BRL\"\n  }\n}"
+            },
+            "url": {
+              "raw": "{{apiBaseUrl}}/transactions/{{insufficientFundsTransactionId}}",
+              "host": [
+                "{{apiBaseUrl}}"
+              ],
+              "path": [
+                "transactions",
+                "{{insufficientFundsTransactionId}}"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Account not found",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.environment.set('notFoundTransactionId', pm.variables.replaceIn('{{$guid}}'));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 404', () => pm.response.to.have.status(404));",
+                  "const json = pm.response.json();",
+                  "pm.test('problem detail returned', () => pm.expect(json).to.have.property('title'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"accountId\": \"{{missingAccountId}}\",\n  \"type\": \"CREDIT\",\n  \"amount\": {\n    \"value\": 10.00,\n    \"currency\": \"BRL\"\n  }\n}"
+            },
+            "url": {
+              "raw": "{{apiBaseUrl}}/transactions/{{notFoundTransactionId}}",
+              "host": [
+                "{{apiBaseUrl}}"
+              ],
+              "path": [
+                "transactions",
+                "{{notFoundTransactionId}}"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Invalid currency",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.environment.set('invalidCurrencyTransactionId', pm.variables.replaceIn('{{$guid}}'));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 400', () => pm.response.to.have.status(400));",
+                  "pm.test('problem detail returned', () => pm.expect(pm.response.json()).to.have.property('title'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"accountId\": \"{{accountId}}\",\n  \"type\": \"CREDIT\",\n  \"amount\": {\n    \"value\": 10.00,\n    \"currency\": \"USD\"\n  }\n}"
+            },
+            "url": {
+              "raw": "{{apiBaseUrl}}/transactions/{{invalidCurrencyTransactionId}}",
+              "host": [
+                "{{apiBaseUrl}}"
+              ],
+              "path": [
+                "transactions",
+                "{{invalidCurrencyTransactionId}}"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Invalid amount",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.environment.set('invalidAmountTransactionId', pm.variables.replaceIn('{{$guid}}'));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 400', () => pm.response.to.have.status(400));",
+                  "pm.test('problem detail returned', () => pm.expect(pm.response.json()).to.have.property('title'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"accountId\": \"{{accountId}}\",\n  \"type\": \"CREDIT\",\n  \"amount\": {\n    \"value\": 0,\n    \"currency\": \"BRL\"\n  }\n}"
+            },
+            "url": {
+              "raw": "{{apiBaseUrl}}/transactions/{{invalidAmountTransactionId}}",
+              "host": [
+                "{{apiBaseUrl}}"
+              ],
+              "path": [
+                "transactions",
+                "{{invalidAmountTransactionId}}"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Idempotency",
+      "item": [
+        {
+          "name": "Idempotent replay - first request",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.environment.set('replayTransactionId', pm.variables.replaceIn('{{$guid}}'));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "const json = pm.response.json();",
+                  "pm.test('transaction succeeded', () => pm.expect(json.transaction.status).to.eql('SUCCEEDED'));",
+                  "pm.environment.set('replayBalanceAmount', String(json.account.balance.amount));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"accountId\": \"{{accountId}}\",\n  \"type\": \"CREDIT\",\n  \"amount\": {\n    \"value\": 15.00,\n    \"currency\": \"BRL\"\n  }\n}"
+            },
+            "url": {
+              "raw": "{{apiBaseUrl}}/transactions/{{replayTransactionId}}",
+              "host": [
+                "{{apiBaseUrl}}"
+              ],
+              "path": [
+                "transactions",
+                "{{replayTransactionId}}"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Idempotent replay - same payload",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "const json = pm.response.json();",
+                  "pm.test('same transaction id', () => pm.expect(json.transaction.id).to.eql(pm.environment.get('replayTransactionId')));",
+                  "pm.test('same resulting balance snapshot', () => pm.expect(String(json.account.balance.amount)).to.eql(pm.environment.get('replayBalanceAmount')));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"accountId\": \"{{accountId}}\",\n  \"type\": \"CREDIT\",\n  \"amount\": {\n    \"value\": 15.00,\n    \"currency\": \"BRL\"\n  }\n}"
+            },
+            "url": {
+              "raw": "{{apiBaseUrl}}/transactions/{{replayTransactionId}}",
+              "host": [
+                "{{apiBaseUrl}}"
+              ],
+              "path": [
+                "transactions",
+                "{{replayTransactionId}}"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Idempotency conflict - first request",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.environment.set('conflictTransactionId', pm.variables.replaceIn('{{$guid}}'));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('transaction succeeded', () => pm.expect(pm.response.json().transaction.status).to.eql('SUCCEEDED'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"accountId\": \"{{accountId}}\",\n  \"type\": \"CREDIT\",\n  \"amount\": {\n    \"value\": 20.00,\n    \"currency\": \"BRL\"\n  }\n}"
+            },
+            "url": {
+              "raw": "{{apiBaseUrl}}/transactions/{{conflictTransactionId}}",
+              "host": [
+                "{{apiBaseUrl}}"
+              ],
+              "path": [
+                "transactions",
+                "{{conflictTransactionId}}"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Idempotency conflict - different payload",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 409', () => pm.response.to.have.status(409));",
+                  "pm.test('problem detail returned', () => pm.expect(pm.response.json()).to.have.property('title'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"accountId\": \"{{accountId}}\",\n  \"type\": \"CREDIT\",\n  \"amount\": {\n    \"value\": 21.00,\n    \"currency\": \"BRL\"\n  }\n}"
+            },
+            "url": {
+              "raw": "{{apiBaseUrl}}/transactions/{{conflictTransactionId}}",
+              "host": [
+                "{{apiBaseUrl}}"
+              ],
+              "path": [
+                "transactions",
+                "{{conflictTransactionId}}"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "LocalStack SQS",
+      "item": [
+        {
+          "name": "Receive main queue messages",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('localstack responded', () => pm.expect(pm.response.code).to.be.oneOf([200, 201]));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/x-www-form-urlencoded"
+              }
+            ],
+            "body": {
+              "mode": "urlencoded",
+              "urlencoded": [
+                {
+                  "key": "Action",
+                  "value": "ReceiveMessage",
+                  "type": "text"
+                },
+                {
+                  "key": "Version",
+                  "value": "2012-11-05",
+                  "type": "text"
+                },
+                {
+                  "key": "MaxNumberOfMessages",
+                  "value": "10",
+                  "type": "text"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{localstackBaseUrl}}/{{queuePath}}",
+              "host": [
+                "{{localstackBaseUrl}}"
+              ],
+              "path": [
+                "{{queuePath}}"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Receive DLQ messages",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('localstack responded', () => pm.expect(pm.response.code).to.be.oneOf([200, 201]));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/x-www-form-urlencoded"
+              }
+            ],
+            "body": {
+              "mode": "urlencoded",
+              "urlencoded": [
+                {
+                  "key": "Action",
+                  "value": "ReceiveMessage",
+                  "type": "text"
+                },
+                {
+                  "key": "Version",
+                  "value": "2012-11-05",
+                  "type": "text"
+                },
+                {
+                  "key": "MaxNumberOfMessages",
+                  "value": "10",
+                  "type": "text"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{localstackBaseUrl}}/{{dlqPath}}",
+              "host": [
+                "{{localstackBaseUrl}}"
+              ],
+              "path": [
+                "{{dlqPath}}"
+              ]
+            }
+          }
+        }
+      ]
+    }
+  ]
+}
