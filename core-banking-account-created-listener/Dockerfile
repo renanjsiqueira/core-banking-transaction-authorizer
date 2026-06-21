@@ -18,7 +18,10 @@ RUN mvn -q -pl core-banking-account-created-listener -am -DskipTests package
 FROM eclipse-temurin:21-jre
 WORKDIR /app
 RUN apt-get update && apt-get install -y --no-install-recommends curl \
-    && rm -rf /var/lib/apt/lists/*
-COPY --from=build /workspace/core-banking-account-created-listener/target/core-banking-account-created-listener.jar app.jar
+    && rm -rf /var/lib/apt/lists/* \
+    && groupadd --system --gid 10001 app \
+    && useradd --system --uid 10001 --gid app --home-dir /app app
+COPY --from=build --chown=app:app /workspace/core-banking-account-created-listener/target/core-banking-account-created-listener.jar app.jar
+USER app
 EXPOSE 8081
 ENTRYPOINT ["java", "-jar", "app.jar"]

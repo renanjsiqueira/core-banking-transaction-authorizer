@@ -349,7 +349,7 @@ Implementado neste case:
 - Circuit breaker para Redis-compatible/Valkey com `fail-open` padrão e `fail-closed` configurável.
 - Processamento SQS at-least-once: mensagem só é deletada após sucesso e importação é idempotente por `accountId`.
 - DLQ local no LocalStack com redrive policy para simular poison messages no ambiente de revisão.
-- Health checks, shutdown graceful, Actuator/Prometheus, métricas de negócio da API, correlation ID/MDC, Dockerfiles e `docker-compose` completo para execução local.
+- Health checks, shutdown graceful, Actuator/Prometheus, métricas de negócio da API, correlation ID/MDC, Dockerfiles com runtime não-root e `docker-compose` completo para execução local.
 
 Assumidamente deixado como evolução por risco/tempo:
 
