@@ -17,7 +17,7 @@ está documentada em [docs/adr/0001-two-services-architecture.md](docs/adr/0001-
 
 Documentação adicional: [arquitetura](docs/architecture.md) ·
 [deploy em cloud](docs/cloud-deployment.md) · [pipeline CI/CD](docs/pipeline.md) ·
-[guia de avaliação](docs/case-review-guide.md) · [runbook operacional](docs/operations-runbook.md) ·
+[runbook operacional](docs/operations-runbook.md) ·
 [capacidade](docs/capacity-planning.md) · [alertas](docs/alerts.md) ·
 [backlog production readiness](docs/production-readiness-backlog.md).
 
