@@ -53,9 +53,19 @@ Para uma esteira de produção, os gates recomendados são:
 | Imagens vulneráveis | Trivy ou Grype | Bloquear High/Critical em imagem runtime |
 | IaC/Kubernetes | kubeconform, kube-score ou Checkov | Bloquear manifest inválido e riscos básicos |
 
-No workflow atual, o caminho automatizado de `master` já executa build/testes
-unitários, build das imagens, push no ECR e rollout no EKS. Para ativar os scans
-em uma conta real, entrariam jobs antes de `build-and-push`, por exemplo:
+Há dois workflows:
+
+- [`.github/workflows/ci.yml`](../.github/workflows/ci.yml) roda em **pull request**
+  para `master` (e em pushes de branches de feature) e executa a **suíte completa**
+  (`mvn clean verify`), incluindo os testes de integração com Testcontainers
+  (PostgreSQL + Redis), que rodam no runner `ubuntu-latest` por ter Docker. É o
+  gate que protege o `master`.
+- [`.github/workflows/deploy-prod.yml`](../.github/workflows/deploy-prod.yml) roda
+  no push para `master`: build/testes, build das imagens, push no ECR e rollout no
+  EKS.
+
+Para ativar os scans em uma conta real, entrariam jobs antes de `build-and-push`,
+por exemplo:
 
 ```text
 verify -> dependency-scan -> static-analysis -> image-scan -> deploy-prod
