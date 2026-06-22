@@ -1,13 +1,13 @@
 # Runbook operacional
 
-Este runbook resume como operar, diagnosticar e explicar a aplicacao em um
-ambiente parecido com producao.
+Este runbook resume como operar, diagnosticar e explicar a aplicação em um
+ambiente parecido com produção.
 
-## Endpoints de saude
+## Endpoints de saúde
 
-Ambos os servicos expõem Actuator:
+Ambos os serviços expõem Actuator:
 
-| Servico | Health geral | Readiness | Liveness | Metricas |
+| Serviço | Health geral | Readiness | Liveness | Métricas |
 |---|---|---|---|---|
 | API | `/actuator/health` | `/actuator/health/readiness` | `/actuator/health/liveness` | `/actuator/prometheus` |
 | Listener | `/actuator/health` | `/actuator/health/readiness` | `/actuator/health/liveness` | `/actuator/prometheus` |
@@ -16,23 +16,23 @@ No Kubernetes, os manifests usam:
 
 - `startupProbe` em `/actuator/health/readiness`, dando tempo para a JVM e o
   Spring inicializarem.
-- `readinessProbe` em `/actuator/health/readiness`, removendo o pod do trafego
-  quando ele nao estiver pronto.
+- `readinessProbe` em `/actuator/health/readiness`, removendo o pod do tráfego
+  quando ele não estiver pronto.
 - `livenessProbe` em `/actuator/health/liveness`, reiniciando o pod se o
   processo ficar travado.
 - ALB health check apontando para `/actuator/health/readiness`.
 
 ## Shutdown e rollout
 
-Os servicos usam `server.shutdown=graceful`. Nos manifests Kubernetes ha
+Os serviços usam `server.shutdown=graceful`. Nos manifests Kubernetes há
 `terminationGracePeriodSeconds` e `preStop` curto para reduzir a chance de o pod
-receber novas requisicoes enquanto esta encerrando.
+receber novas requisições enquanto está encerrando.
 
-Durante rollout:
+Durante o rollout:
 
-1. Kubernetes cria novos pods.
-2. `startupProbe` evita matar pods lentos durante bootstrap.
-3. `readinessProbe` so envia trafego quando o pod esta pronto.
+1. O Kubernetes cria novos pods.
+2. `startupProbe` evita matar pods lentos durante o bootstrap.
+3. `readinessProbe` só envia tráfego quando o pod está pronto.
 4. O workflow aguarda `kubectl rollout status`.
 5. Se o rollout falhar, o workflow executa `kubectl rollout undo`.
 
@@ -41,8 +41,8 @@ Durante rollout:
 Campos importantes:
 
 - `correlationId`: propagado/gerado pelo header `X-Correlation-Id`.
-- `transactionId`: extraido de `/transactions/{transactionId}`.
-- `event=authorization_decision`: log estruturado de decisao financeira.
+- `transactionId`: extraído de `/transactions/{transactionId}`.
+- `event=authorization_decision`: log estruturado de decisão financeira.
 
 Exemplo:
 
@@ -50,9 +50,9 @@ Exemplo:
 event=authorization_decision transactionId=... accountId=... type=DEBIT status=FAILED failureReason=INSUFFICIENT_FUNDS latencyMs=12
 ```
 
-Esse log permite explicar uma decisao sem consultar o banco imediatamente.
+Esse log permite explicar uma decisão sem consultar o banco imediatamente.
 
-## Metricas principais
+## Métricas principais
 
 API:
 
@@ -73,7 +73,7 @@ Listener:
 - `sqs.account-created.messages.processed.total`
 - `sqs.account-created.messages.failed.total`
 
-Alertas sugeridos estao em [alerts.md](alerts.md).
+Alertas sugeridos estão em [alerts.md](alerts.md).
 
 ## DLQ local
 
@@ -83,7 +83,7 @@ O LocalStack cria automaticamente:
 - DLQ: `conta-bancaria-criada-dlq`
 - redrive policy com `maxReceiveCount=5`
 
-Comandos uteis:
+Comandos úteis:
 
 ```bash
 aws --endpoint-url=http://localhost:4566 --region sa-east-1 \
@@ -99,30 +99,30 @@ aws --endpoint-url=http://localhost:4566 --region sa-east-1 \
 
 ## Containers e runtime
 
-Os Dockerfiles usam imagem runtime `eclipse-temurin:21-jre` e criam usuario
-nao-root `app` com UID/GID `10001`, alinhado aos manifests Kubernetes
+Os Dockerfiles usam a imagem de runtime `eclipse-temurin:21-jre` e criam o
+usuário não-root `app` com UID/GID `10001`, alinhado aos manifests Kubernetes
 (`runAsUser: 10001`).
 
 Avaliamos imagens menores:
 
-| Alternativa | Beneficio | Tradeoff |
+| Alternativa | Benefício | Tradeoff |
 |---|---|---|
-| `eclipse-temurin:21-jre-alpine` | menor tamanho | base `musl`, possiveis diferencas de DNS/locale e necessidade de revalidar JVM |
-| Distroless Java | menor superficie e melhor seguranca | dificulta debug e exige remover healthcheck baseado em `curl` no Docker Compose |
+| `eclipse-temurin:21-jre-alpine` | menor tamanho | base `musl`, possíveis diferenças de DNS/locale e necessidade de revalidar a JVM |
+| Distroless Java | menor superfície e melhor segurança | dificulta o debug e exige remover o healthcheck baseado em `curl` no Docker Compose |
 | Manter `eclipse-temurin:21-jre` | previsibilidade e compatibilidade | imagem maior |
 
-Decisao atual: manter `eclipse-temurin:21-jre` para previsibilidade no case e
-porque o Compose usa `curl` nos healthchecks. Em producao, uma evolucao natural
-seria distroless ou Temurin Alpine apos ajustar healthchecks e validar DNS,
+Decisão atual: manter `eclipse-temurin:21-jre` pela previsibilidade no case e
+porque o Compose usa `curl` nos healthchecks. Em produção, uma evolução natural
+seria distroless ou Temurin Alpine após ajustar os healthchecks e validar DNS,
 certificados, observabilidade e troubleshooting.
 
-## Troubleshooting rapido
+## Troubleshooting rápido
 
 | Sintoma | Verificar |
 |---|---|
 | API retorna `409 Resource locked` | `transactions.locks.timeouts.total`, conta quente, `app.redis-lock.wait-timeout` |
-| API retorna `503 Lock unavailable` | fallback `FAIL_CLOSED`, conectividade com Valkey |
-| Listener nao drena fila | `SQS_POLLING_ENABLED`, credenciais/IRSA, `ApproximateNumberOfMessagesVisible`, logs do listener |
-| Mensagens na DLQ | payload invalido, erro persistente no banco, redrive policy |
-| Latencia p99 alta | pool Hikari, locks por conta, CPU/memoria, Aurora/RDS Proxy |
-| Rollout travado | `kubectl describe pod`, readiness/liveness, variaveis e secrets |
+| API retorna `503 Lock unavailable` | fallback `FAIL_CLOSED`, conectividade com o Valkey |
+| Listener não drena a fila | `SQS_POLLING_ENABLED`, credenciais/IRSA, `ApproximateNumberOfMessagesVisible`, logs do listener |
+| Mensagens na DLQ | payload inválido, erro persistente no banco, redrive policy |
+| Latência p99 alta | pool Hikari, locks por conta, CPU/memória, Aurora/RDS Proxy |
+| Rollout travado | `kubectl describe pod`, readiness/liveness, variáveis e secrets |
