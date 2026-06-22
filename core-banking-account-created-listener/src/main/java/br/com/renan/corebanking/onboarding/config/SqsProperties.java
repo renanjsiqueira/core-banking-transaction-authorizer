@@ -13,6 +13,7 @@ public record SqsProperties(
         String secretKey,
         Integer maxNumberOfMessages,
         Integer waitTimeSeconds,
+        Integer concurrency,
         Duration apiCallTimeout,
         Duration apiCallAttemptTimeout,
         Boolean pollingEnabled,

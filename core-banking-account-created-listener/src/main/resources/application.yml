@@ -39,6 +39,7 @@ app:
       secret-key: ${AWS_SECRET_ACCESS_KEY:}
       max-number-of-messages: 10
       wait-time-seconds: 10
+      concurrency: ${SQS_CONCURRENCY:5}
       api-call-timeout: ${SQS_API_CALL_TIMEOUT:20s}
       api-call-attempt-timeout: ${SQS_API_CALL_ATTEMPT_TIMEOUT:15s}
       polling-enabled: ${SQS_POLLING_ENABLED:false}

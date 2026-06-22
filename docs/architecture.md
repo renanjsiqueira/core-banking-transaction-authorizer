@@ -64,10 +64,14 @@ preferir recusar em vez de seguir apenas com o banco.
 
 ## Fluxo de contas criadas (Listener)
 
-Um poller `@Scheduled` faz long polling no SQS (lote de 10), parseia cada
-mensagem `account-created` e importa a conta (saldo zero em `BRL`). Idempotente
-por `accountId`; a mensagem só é deletada **após** o sucesso da importação
-(entrega at-least-once + processamento idempotente).
+Um poller `@Scheduled` faz long polling no SQS (lote de 10) e processa as
+mensagens do lote **em paralelo** num pool de workers
+(`app.aws.sqs.concurrency`), parseando cada mensagem `account-created` e
+importando a conta (saldo zero em `BRL`). Idempotente por `accountId`; ao final
+do ciclo, as mensagens importadas com sucesso são removidas em **uma chamada
+`DeleteMessageBatch`**. Mensagens que falham não são deletadas e voltam pela
+redelivery do SQS (entrega at-least-once + processamento idempotente), indo para
+a DLQ após `maxReceiveCount`.
 
 ## Propriedade dos dados
 

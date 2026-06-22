@@ -326,9 +326,13 @@ Os locks são adquiridos sempre na ordem `transactionId` → `accountId` (nunca 
 
 ## Importação de contas via SQS
 
-O listener consome `conta-bancaria-criada` com long polling. Contas são
-importadas com saldo zero e moeda BRL; o processamento é **idempotente** (não
-duplica) e a mensagem só é **deletada após sucesso** (entrega at-least-once).
+O listener consome `conta-bancaria-criada` com long polling. Cada lote é
+processado **em paralelo** por um pool de workers (`app.aws.sqs.concurrency`, env
+`SQS_CONCURRENCY`, default 5) e as importações bem-sucedidas são removidas em uma
+única chamada `DeleteMessageBatch`. Contas são importadas com saldo zero e moeda
+BRL; o processamento é **idempotente** (não duplica) e a mensagem só é **deletada
+após sucesso** (entrega at-least-once; o que falha volta pela redelivery e, após
+`maxReceiveCount`, vai para a DLQ).
 
 ## Timeouts configuráveis
 

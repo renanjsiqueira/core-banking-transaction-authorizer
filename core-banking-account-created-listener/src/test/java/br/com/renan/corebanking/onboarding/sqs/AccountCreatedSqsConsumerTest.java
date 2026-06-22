@@ -1,5 +1,6 @@
 package br.com.renan.corebanking.onboarding.sqs;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.Mockito.doNothing;
@@ -15,6 +16,7 @@ import java.util.UUID;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 
@@ -24,7 +26,8 @@ import br.com.renan.corebanking.onboarding.service.AccountCreatedConsumerService
 import br.com.renan.corebanking.onboarding.support.AccountCreatedMessageTestFactory;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import software.amazon.awssdk.services.sqs.SqsClient;
-import software.amazon.awssdk.services.sqs.model.DeleteMessageRequest;
+import software.amazon.awssdk.services.sqs.model.DeleteMessageBatchRequest;
+import software.amazon.awssdk.services.sqs.model.DeleteMessageBatchResponse;
 import software.amazon.awssdk.services.sqs.model.Message;
 import software.amazon.awssdk.services.sqs.model.ReceiveMessageRequest;
 import software.amazon.awssdk.services.sqs.model.ReceiveMessageResponse;
@@ -42,9 +45,11 @@ class AccountCreatedSqsConsumerTest {
         consumerService = mock(AccountCreatedConsumerService.class);
         SqsProperties properties = new SqsProperties(
                 "sa-east-1", "http://localhost:4566", QUEUE_URL, "test", "test",
-                10, 10, Duration.ofSeconds(20), Duration.ofSeconds(15), true, 1000L);
+                10, 10, 4, Duration.ofSeconds(20), Duration.ofSeconds(15), true, 1000L);
         consumer = new AccountCreatedSqsConsumer(
                 sqsClient, properties, consumerService, new ObjectMapper(), new SimpleMeterRegistry());
+        when(sqsClient.deleteMessageBatch(any(DeleteMessageBatchRequest.class)))
+                .thenReturn(DeleteMessageBatchResponse.builder().build());
     }
 
     private static Message message(String accountId) {
@@ -60,6 +65,13 @@ class AccountCreatedSqsConsumerTest {
                 .thenReturn(ReceiveMessageResponse.builder().messages(messages).build());
     }
 
+    private int deletedEntries() {
+        ArgumentCaptor<DeleteMessageBatchRequest> captor =
+                ArgumentCaptor.forClass(DeleteMessageBatchRequest.class);
+        verify(sqsClient).deleteMessageBatch(captor.capture());
+        return captor.getValue().entries().size();
+    }
+
     @Test
     void deletesMessageWhenProcessingSucceeds() {
         givenQueueReturns(message(AccountCreatedMessageTestFactory.VALID_ID));
@@ -68,7 +80,7 @@ class AccountCreatedSqsConsumerTest {
         consumer.poll();
 
         verify(consumerService).importAccount(any(AccountCreatedMessageDTO.class));
-        verify(sqsClient).deleteMessage(any(DeleteMessageRequest.class));
+        assertThat(deletedEntries()).isEqualTo(1);
     }
 
     @Test
@@ -80,7 +92,7 @@ class AccountCreatedSqsConsumerTest {
         consumer.poll();
 
         verify(consumerService).importAccount(any(AccountCreatedMessageDTO.class));
-        verify(sqsClient, never()).deleteMessage(any(DeleteMessageRequest.class));
+        verify(sqsClient, never()).deleteMessageBatch(any(DeleteMessageBatchRequest.class));
     }
 
     @Test
@@ -90,11 +102,11 @@ class AccountCreatedSqsConsumerTest {
         consumer.poll();
 
         verify(consumerService, never()).importAccount(any());
-        verify(sqsClient, never()).deleteMessage(any(DeleteMessageRequest.class));
+        verify(sqsClient, never()).deleteMessageBatch(any(DeleteMessageBatchRequest.class));
     }
 
     @Test
-    void multipleMessagesAreProcessedIndividually() {
+    void multipleMessagesAreProcessedAndDeletedInBatch() {
         givenQueueReturns(
                 message(UUID.randomUUID().toString()),
                 message(UUID.randomUUID().toString()),
@@ -104,7 +116,7 @@ class AccountCreatedSqsConsumerTest {
         consumer.poll();
 
         verify(consumerService, times(3)).importAccount(any(AccountCreatedMessageDTO.class));
-        verify(sqsClient, times(3)).deleteMessage(any(DeleteMessageRequest.class));
+        assertThat(deletedEntries()).isEqualTo(3);
     }
 
     @Test
@@ -121,6 +133,6 @@ class AccountCreatedSqsConsumerTest {
         consumer.poll();
 
         verify(consumerService, times(3)).importAccount(any(AccountCreatedMessageDTO.class));
-        verify(sqsClient, times(2)).deleteMessage(any(DeleteMessageRequest.class));
+        assertThat(deletedEntries()).isEqualTo(2);
     }
 }
